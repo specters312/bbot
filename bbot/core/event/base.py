@@ -393,16 +393,20 @@ class BaseEvent:
         """
         if is_event(source):
             self._source = source
-            hosts_are_same = self.host == source.host
+            hosts_are_same = self.host and (self.host == source.host)
             if source.scope_distance >= 0:
                 new_scope_distance = int(source.scope_distance)
                 # only increment the scope distance if the host changes
                 if not hosts_are_same:
                     new_scope_distance += 1
                 self.scope_distance = new_scope_distance
-            # inherit affiliate tag
-            if hosts_are_same and "affiliate" in source.tags:
-                self.add_tag("affiliate")
+            # inherit certain tags
+            if hosts_are_same:
+                for t in source.tags:
+                    if t == "affiliate":
+                        self.add_tag("affiliate")
+                    elif t.startswith("mutation-"):
+                        self.add_tag(t)
         elif not self._dummy:
             log.warning(f"Tried to set invalid source on {self}: (got: {source})")
 
@@ -752,6 +756,8 @@ class ASN(DictEvent):
 
 
 class CODE_REPOSITORY(DictHostEvent):
+    _always_emit = True
+
     class _data_validator(BaseModel):
         url: str
         _validate_url = field_validator("url")(validators.validate_url)

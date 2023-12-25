@@ -3,15 +3,20 @@ from bbot.modules.base import BaseModule
 
 
 class ajaxpro(BaseModule):
-    ajaxpro_regex = re.compile(r'<script.+src="([\/a-zA-Z0-9\._]+,[a-zA-Z0-9\._]+\.ashx)"')
+    """
+    Reference: https://mogwailabs.de/en/blog/2022/01/vulnerability-spotlight-rce-in-ajax.net-professional/
+    """
 
+    ajaxpro_regex = re.compile(r'<script.+src="([\/a-zA-Z0-9\._]+,[a-zA-Z0-9\._]+\.ashx)"')
     watched_events = ["HTTP_RESPONSE", "URL"]
     produced_events = ["VULNERABILITY", "FINDING"]
-    flags = ["active", "aggressive", "web-thorough"]
+    flags = ["active", "safe", "web-thorough"]
     meta = {"description": "Check for potentially vulnerable Ajaxpro instances"}
 
     async def handle_event(self, event):
         if event.type == "URL":
+            if "dir" not in event.tags:
+                return False
             probe_url = f"{event.data}ajaxpro/whatever.ashx"
             probe = await self.helpers.request(probe_url)
             if probe:
