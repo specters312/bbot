@@ -942,6 +942,11 @@ class STORAGE_BUCKET(DictEvent, URL_UNVERIFIED):
 class URL_HINT(URL_UNVERIFIED):
     pass
 
+class WEB_PARAMETER(BaseEvent):
+
+    def _host(self):
+        return self.data["host"]
+
 
 class EMAIL_ADDRESS(BaseEvent):
     def sanitize_data(self, data):
