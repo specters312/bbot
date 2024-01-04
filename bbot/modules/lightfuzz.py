@@ -132,7 +132,7 @@ class lightfuzz(BaseModule):
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
                 )
 
-                description = f"HTTP Extracted Parameter [{parameter_name}. Regex Name: [{regex_name}]"
+                description = f"HTTP Extracted Parameter [{parameter_name}]. Regex Name: [{regex_name}]"
                 data = {
                     "host": str(event.host),
                     "type": "GETPARAM",
