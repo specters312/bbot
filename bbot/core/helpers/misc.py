@@ -940,9 +940,9 @@ def extract_params_html(html_data):
     if jquery_post:
         for i in jquery_post:
             for x in i.split(","):
-                s = x.split(":")[0].rstrip()
+                s = x.split(":")[0].strip().replace('"', "")
                 log.debug(f"FOUND PARAM ({s}) IN A JQUERY POST PARAMS")
-                yield None, s, jquery_post
+                yield None, s, "jquery_post"
 
     a_tag = bbot_regexes.a_tag_regex.findall(html_data)
     for s in a_tag:
