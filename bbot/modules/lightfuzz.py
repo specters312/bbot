@@ -116,6 +116,8 @@ class lightfuzz(BaseModule):
             body = event.data.get("body", "")
 
             for endpoint, parameter_name, regex_name in extract_params_html(body):
+                if endpoint == None:
+                    endpoint = "/"
                 self.debug(
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
                 )
