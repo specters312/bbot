@@ -82,27 +82,31 @@ class XSSLightfuzz(BaseLightfuzz):
 
         if between_tags:
             between_tags_probe = f"<b>{random_string}</b>"
-
-            if between_tags_probe in await self.send_probe(between_tags_probe):
-                self.results.append(
-                    f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Between Tags]"
-                )
+            probe_result = await self.send_probe(between_tags_probe)
+            if probe_result:
+                if between_tags_probe in probe_result:
+                    self.results.append(
+                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Between Tags]"
+                    )
 
         if in_tag_attribute:
             in_tag_attribute_probe = f'{random_string}"'
             in_tag_attribute_match = f'"{random_string}""'
-
-            if in_tag_attribute_match in await self.send_probe(in_tag_attribute_probe):
-                self.results.append(
-                    f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Tab Attribute]"
-                )
+            probe_result = await self.send_probe(in_tag_attribute_probe)
+            if probe_result:
+                if in_tag_attribute_match in probe_result:
+                    self.results.append(
+                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Tab Attribute]"
+                    )
 
         if in_javascript:
             in_javascript_probe = rf"</script><script>{random_string}</script>"
-            if in_javascript_probe in await self.send_probe(in_javascript_probe):
-                self.results.append(
-                    f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [In Javascript]"
-                )
+            probe_result = await self.send_probe(in_javascript_probe)
+            if probe_result:
+                if in_javascript_probe in probe_result:
+                    self.results.append(
+                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [In Javascript]"
+                    )
 
 
 class lightfuzz(BaseModule):
