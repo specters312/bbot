@@ -904,7 +904,7 @@ def extract_params_html(html_data):
         html_data (str): HTML-formatted string.
 
     Yields:
-        str: A string containing the parameter found in HTML object.
+        tuple(str, str): A string containing (optionally) the endpoint associated with the parameter, the parameter found in HTML object, and the name of the detecting regex.
 
     Examples:
         >>> html_data = '''
@@ -920,20 +920,20 @@ def extract_params_html(html_data):
         ... </html>
         ... '''
         >>> list(extract_params_html(html_data))
-        ['user', 'param2', 'param3']
+        [('/test','user'), ('/test','param2'_, ('/test','param3')]
     """
     input_tag = bbot_regexes.input_tag_regex.findall(html_data)
 
     for i in input_tag:
         log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-        yield i
+        yield None, i, "input_tag"
 
     # check for jquery get parameters
     jquery_get = bbot_regexes.jquery_get_regex.findall(html_data)
 
     for i in jquery_get:
         log.debug(f"FOUND PARAM ({i}) IN JQUERY GET PARAMS")
-        yield i
+        yield None, i, "jquery_get"
 
     # check for jquery post parameters
     jquery_post = bbot_regexes.jquery_post_regex.findall(html_data)
@@ -942,12 +942,22 @@ def extract_params_html(html_data):
             for x in i.split(","):
                 s = x.split(":")[0].rstrip()
                 log.debug(f"FOUND PARAM ({s}) IN A JQUERY POST PARAMS")
-                yield s
+                yield None, s, jquery_post
 
     a_tag = bbot_regexes.a_tag_regex.findall(html_data)
     for s in a_tag:
-        log.debug(f"FOUND PARAM ({s}) IN A TAG GET PARAMS")
-        yield s
+        log.debug(f"FOUND PARAM ({s[1]}) IN A TAG GET PARAMS")
+        href = s[0]
+        parameter = s[1]
+        yield href, parameter, "a_tag"
+
+    get_form = bbot_regexes.get_form_regex.findall(html_data)
+    for i in get_form:
+        form_action = i[0]
+        input_parse_regex = r"<input[^>]+name=['\"]?([^'\">]+)['\"]?[^>]*>"
+        input_names = re.findall(input_parse_regex, i[1])
+        for input_name in input_names:
+            yield form_action, input_name, "get_form"
 
 
 def extract_words(data, acronyms=True, wordninja=True, model=None, max_length=100, word_regexes=None):

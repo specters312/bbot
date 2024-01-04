@@ -100,7 +100,7 @@ class paramminer_headers(BaseModule):
     async def do_mining(self, wl, url, batch_size, compare_helper):
         for i in wl:
             if i not in self.wl:
-                h = hash(i + url)
+                h = hash(i[1] + url)
                 self.already_checked.add(h)
 
         results = set()
@@ -127,8 +127,14 @@ class paramminer_headers(BaseModule):
                 tags = ["http_reflection"]
             description = f"[Paramminer] {self.compare_mode.capitalize()}: [{result}] Reasons: [{reasons}] Reflection: [{str(reflection)}]"
             self.emit_event(
-                {"host": str(event.host), "url": url, "description": description},
-                "FINDING",
+                {
+                    "host": str(event.host),
+                    "url": url,
+                    "type": self.compare_mode.upper(),
+                    "description": description,
+                    "name": result,
+                },
+                "WEB_PARAMETER",
                 event,
                 tags=tags,
             )
@@ -240,7 +246,7 @@ class paramminer_headers(BaseModule):
                 return
             untested_matches_copy = untested_matches.copy()
             for i in untested_matches:
-                h = hash(i + url)
+                h = hash(i[1] + url)
                 if h in self.already_checked:
                     untested_matches_copy.remove(i)
             try:
