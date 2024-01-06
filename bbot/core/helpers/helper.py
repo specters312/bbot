@@ -80,8 +80,15 @@ class ConfigAwareHelper:
     def interactsh(self):
         return Interactsh(self)
 
-    def http_compare(self, url, allow_redirects=False, include_cache_buster=True):
-        return HttpCompare(url, self, allow_redirects=allow_redirects, include_cache_buster=include_cache_buster)
+    def http_compare(self, url, allow_redirects=False, include_cache_buster=True, headers=None, cookies=None):
+        return HttpCompare(
+            url,
+            self,
+            allow_redirects=allow_redirects,
+            include_cache_buster=include_cache_buster,
+            headers=headers,
+            cookies=cookies,
+        )
 
     def temp_filename(self, extension=None):
         """
