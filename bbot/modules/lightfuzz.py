@@ -27,11 +27,7 @@ class SQLiLightfuzz(BaseLightfuzz):
     async def fuzz(self):
         self.parent.critical(self.event.data["type"])
 
-        if self.event.data["original_value"]:
-            probe_value = self.event.data["original_value"]
-
-        else:
-            probe_value = self.parent.helpers.rand_string(8)
+        probe_value = self.event.data.get("original_value", self.parent.helpers.rand_string(8))
 
         if self.event.data["type"] == "GETPARAM":
             baseline_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}"
@@ -194,18 +190,21 @@ class lightfuzz(BaseModule):
             headers = event.data.get("header", "")
             for k, v in headers.items():
                 if k == "set_cookie":
-                    cookie_name = v.split("=")[0]
-                    cookie_value = v.split("=")[1].split(";")[0]
-                    description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
-                    data = {
-                        "host": str(event.host),
-                        "type": "COOKIE",
-                        "name": cookie_name,
-                        "original_value": cookie_value,
-                        "url": event.data["url"],
-                        "description": description,
-                    }
-                    self.emit_event(data, "WEB_PARAMETER", event)
+                    if "=" not in v:
+                        self.critical(f"DEBUG FOR COOKIE WITHOUT =: {v}")
+                    else:
+                        cookie_name = v.split("=")[0]
+                        cookie_value = v.split("=")[1].split(";")[0]
+                        description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
+                        data = {
+                            "host": str(event.host),
+                            "type": "COOKIE",
+                            "name": cookie_name,
+                            "original_value": cookie_value,
+                            "url": event.data["url"],
+                            "description": description,
+                        }
+                        self.emit_event(data, "WEB_PARAMETER", event)
 
             # self.hugeinfo(k)
 
