@@ -9,13 +9,33 @@ log = logging.getLogger("bbot.core.helpers.diff")
 
 
 class HttpCompare:
-    def __init__(self, baseline_url, parent_helper, method="GET", allow_redirects=False, include_cache_buster=True):
+    def __init__(
+        self,
+        baseline_url,
+        parent_helper,
+        method="GET",
+        allow_redirects=False,
+        include_cache_buster=True,
+        headers=None,
+        cookies=None,
+    ):
         self.parent_helper = parent_helper
         self.baseline_url = baseline_url
         self.include_cache_buster = include_cache_buster
         self.method = method
         self.allow_redirects = allow_redirects
         self._baselined = False
+        self.headers = headers
+        self.cookies = cookies
+
+    @staticmethod
+    def merge_dictionaries(headers1, headers2):
+        if headers2 is None:
+            return headers1
+        else:
+            merged_headers = headers1.copy()
+            merged_headers.update(headers2)
+            return merged_headers
 
     async def _baseline(self):
         if not self._baselined:
@@ -26,7 +46,11 @@ class HttpCompare:
             else:
                 url_1 = self.baseline_url
             baseline_1 = await self.parent_helper.request(
-                url_1, follow_redirects=self.allow_redirects, method=self.method
+                url_1,
+                follow_redirects=self.allow_redirects,
+                method=self.method,
+                headers=self.headers,
+                cookies=self.cookies,
             )
             await self.parent_helper.sleep(1)
             # put random parameters in URL, headers, and cookies
@@ -37,8 +61,12 @@ class HttpCompare:
             url_2 = self.parent_helper.add_get_params(self.baseline_url, get_params).geturl()
             baseline_2 = await self.parent_helper.request(
                 url_2,
-                headers={self.parent_helper.rand_string(6): self.parent_helper.rand_string(6)},
-                cookies={self.parent_helper.rand_string(6): self.parent_helper.rand_string(6)},
+                headers=self.merge_dictionaries(
+                    {self.parent_helper.rand_string(6): self.parent_helper.rand_string(6)}, self.headers
+                ),
+                cookies=self.merge_dictionaries(
+                    {self.parent_helper.rand_string(6): self.parent_helper.rand_string(6)}, self.cookies
+                ),
                 follow_redirects=self.allow_redirects,
                 method=self.method,
             )
