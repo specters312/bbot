@@ -1712,6 +1712,18 @@ def filesize(f):
     return 0
 
 
+def rm_rf(f):
+    """Recursively delete a directory
+
+    Args:
+        f (str or Path): The directory path to delete.
+
+    Examples:
+        >>> rm_rf("/tmp/httpx98323849")
+    """
+    shutil.rmtree(f)
+
+
 def clean_old(d, keep=10, filter=lambda x: True, key=latest_mtime, reverse=True, raise_error=False):
     """Clean up old files and directories within a given directory based on various filtering and sorting options.
 
@@ -1739,7 +1751,7 @@ def clean_old(d, keep=10, filter=lambda x: True, key=latest_mtime, reverse=True,
     for path in paths[keep:]:
         try:
             log.debug(f"Removing {path}")
-            shutil.rmtree(path)
+            rm_rf(path)
         except Exception as e:
             msg = f"Failed to delete directory: {path}, {e}"
             if raise_error:
