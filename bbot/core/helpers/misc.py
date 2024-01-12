@@ -911,7 +911,7 @@ def extract_params_html(html_data):
         html_data (str): HTML-formatted string.
 
     Yields:
-        str: A string containing the parameter found in HTML object.
+        tuple(str, str): A string containing (optionally) the endpoint associated with the parameter, the parameter found in HTML object, and the name of the detecting regex.
 
     Examples:
         >>> html_data = '''
@@ -927,34 +927,61 @@ def extract_params_html(html_data):
         ... </html>
         ... '''
         >>> list(extract_params_html(html_data))
-        ['user', 'param2', 'param3']
+        [('/test','user'), ('/test','param2'_, ('/test','param3')]
     """
-    input_tag = bbot_regexes.input_tag_regex.findall(html_data)
 
+    # Check "get forms" for input tags
+    get_form = bbot_regexes.get_form_regex.findall(html_data)
+    log.critical(get_form)
+    for i in get_form:
+        form_action = i[0]
+        log.hugewarning(i[1])
+        input_tag = bbot_regexes.input_tag_regex.findall(i[1])
+        log.critical(input_tag)
+        for i in input_tag:
+            parameter = i[0]
+            if len(i) > 1:
+                original_value = i[1]
+            else:
+                original_value = None
+            log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
+            yield form_action, parameter, original_value, "get_form"
+
+    # Also Look for input tags everywhere, even if not in a form
+    input_tag = bbot_regexes.input_tag_regex.findall(html_data)
     for i in input_tag:
+        parameter = i[0]
+        if len(i) > 1:
+            original_value = i[1]
+        else:
+            original_value = None
         log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-        yield i
+        yield None, parameter, original_value, "input_tag"
 
     # check for jquery get parameters
     jquery_get = bbot_regexes.jquery_get_regex.findall(html_data)
 
     for i in jquery_get:
         log.debug(f"FOUND PARAM ({i}) IN JQUERY GET PARAMS")
-        yield i
+        yield None, i, None, "jquery_get"
 
     # check for jquery post parameters
     jquery_post = bbot_regexes.jquery_post_regex.findall(html_data)
     if jquery_post:
         for i in jquery_post:
             for x in i.split(","):
-                s = x.split(":")[0].rstrip()
+                s = x.split(":")[0].strip().replace('"', "")
                 log.debug(f"FOUND PARAM ({s}) IN A JQUERY POST PARAMS")
-                yield s
+                yield None, s, None, "jquery_post"
 
     a_tag = bbot_regexes.a_tag_regex.findall(html_data)
     for s in a_tag:
-        log.debug(f"FOUND PARAM ({s}) IN A TAG GET PARAMS")
-        yield s
+        log.critical(s)
+        log.debug(f"FOUND PARAM ({s[1]}) IN A TAG GET PARAMS")
+        href = s[0]
+        parameter = s[1]
+        original_value = s[2]
+        yield href, parameter, original_value, "a_tag"
 
 
 def extract_words(data, acronyms=True, wordninja=True, model=None, max_length=100, word_regexes=None):

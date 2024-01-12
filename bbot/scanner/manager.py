@@ -173,6 +173,8 @@ class ScanManager:
             on_success_callback = kwargs.pop("on_success_callback", None)
             abort_if = kwargs.pop("abort_if", None)
 
+            log.debug(f"EMIT {event} 1")
+
             # skip DNS resolution if it's disabled in the config and the event is a target and we don't have a blacklist
             skip_dns_resolution = (not self.dns_resolution) and "target" in event.tags and not self.scan.blacklist
             if skip_dns_resolution:
@@ -196,6 +198,8 @@ class ScanManager:
                         for ip in ips:
                             resolved_hosts.add(ip)
 
+            log.debug(f"EMIT {event} 2")
+
             # kill runaway DNS chains
             dns_resolve_distance = getattr(event, "dns_resolve_distance", 0)
             if dns_resolve_distance >= self.scan.helpers.dns.max_dns_resolve_distance:
@@ -203,6 +207,8 @@ class ScanManager:
                     f"Skipping DNS children for {event} because their DNS resolve distances would be greater than the configured value for this scan ({self.scan.helpers.dns.max_dns_resolve_distance})"
                 )
                 dns_children = {}
+
+            log.debug(f"EMIT {event} 3")
 
             if event.type in ("DNS_NAME", "IP_ADDRESS"):
                 for tag in dns_tags:
@@ -220,6 +226,7 @@ class ScanManager:
                 log.debug(f"Omitting due to blacklisted {reason}: {event}")
                 return
 
+
             # other blacklist rejections - URL extensions, etc.
             if "blacklisted" in event.tags:
                 log.debug(f"Omitting blacklisted event: {event}")
@@ -232,11 +239,23 @@ class ScanManager:
             # Cloud tagging
             await self.scan.helpers.cloud.tag_event(event)
 
+            log.debug(f"EMIT {event} 5")
+
             # Scope shepherding
             # here is where we make sure in-scope events are set to their proper scope distance
             if event.host and event_whitelisted:
                 log.debug(f"Making {event} in-scope")
                 event.scope_distance = 0
+
+            event_in_report_distance = event.scope_distance <= self.scan.scope_report_distance
+            event_will_be_output = event.always_emit or event_in_report_distance
+            if not event_will_be_output:
+                log.debug(
+                    f"Making {event} internal because its scope_distance ({event.scope_distance}) > scope_report_distance ({self.scan.scope_report_distance})"
+                )
+                event.internal = True
+
+            log.debug(f"EMIT {event} 6")
 
             # check for wildcards
             if event.scope_distance <= self.scan.scope_search_distance:
@@ -244,11 +263,29 @@ class ScanManager:
                     if not self.scan.helpers.is_ip_type(event.host):
                         await self.scan.helpers.dns.handle_wildcard_event(event, dns_children)
 
+            log.debug(f"EMIT {event} 7")
+
             # For DNS_NAMEs, we've waited to do this until now, in case event.data changed during handle_wildcard_event()
             if event.type == "DNS_NAME":
                 acceptable = self._event_precheck(event)
                 if not acceptable:
                     return
+
+            log.debug(f"EMIT {event} 8")
+
+            # if we discovered something interesting from an internal event,
+            # make sure we preserve its chain of parents
+            source = event.source
+            if source.internal and (event_will_be_output or event._graph_important):
+                source_in_report_distance = source.scope_distance <= self.scan.scope_report_distance
+                if source_in_report_distance:
+                    source.internal = False
+                if not source._graph_important:
+                    source._graph_important = True
+                    log.debug(f"Re-queuing internal event {source} with parent {event}")
+                    self.queue_event(source)
+
+            log.debug(f"EMIT {event} 9")
 
             # now that the event is properly tagged, we can finally make decisions about it
             abort_result = False
@@ -263,13 +300,19 @@ class ScanManager:
                     log.debug(msg)
                     return
 
+            log.debug(f"EMIT {event} 10")
+
             # run success callback before distributing event (so it can add tags, etc.)
             if callable(on_success_callback):
                 async with self.scan._acatch(context=on_success_callback):
                     await self.scan.helpers.execute_sync_or_async(on_success_callback, event)
 
+            log.debug(f"EMIT {event} 11")
+
             await self.distribute_event(event)
             event_distributed = True
+
+            log.debug(f"EMIT {event} 12")
 
             # speculate DNS_NAMES and IP_ADDRESSes from other event types
             source_event = event
@@ -287,6 +330,8 @@ class ScanManager:
                     if "target" in event.tags:
                         source_event.add_tag("target")
                     self.queue_event(source_event)
+
+            log.debug(f"EMIT {event} 13")
 
             ### Emit DNS children ###
             if self.dns_resolution:
@@ -321,6 +366,8 @@ class ScanManager:
                                     )
                     for child_event in dns_child_events:
                         self.queue_event(child_event)
+
+            log.debug(f"EMIT {event} 14")
 
         except ValidationError as e:
             log.warning(f"Event validation failed with kwargs={kwargs}: {e}")

@@ -955,6 +955,17 @@ class URL_HINT(URL_UNVERIFIED):
     pass
 
 
+class WEB_PARAMETER(BaseEvent):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _host(self):
+        return self.data["host"]
+
+    def _url(self):
+        return self.data["url"]
+
+
 class EMAIL_ADDRESS(BaseEvent):
     def sanitize_data(self, data):
         return validators.validate_email(data)
