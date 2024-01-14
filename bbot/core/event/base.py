@@ -955,13 +955,8 @@ class URL_HINT(URL_UNVERIFIED):
     pass
 
 
-class WEB_PARAMETER(BaseEvent):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _host(self):
-        return self.data["host"]
-
+class WEB_PARAMETER(DictHostEvent):
+    
     def _url(self):
         return self.data["url"]
 

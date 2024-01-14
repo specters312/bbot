@@ -173,6 +173,13 @@ class lightfuzz(BaseModule):
     flags = ["active", "web-thorough"]
     meta = {"description": "Find Web Parameters and Lightly Fuzz them using a heuristic based scanner"}
 
+
+    parameter_blacklist = ["__VIEWSTATE","__EVENTARGUMENT","JSESSIONID"]
+
+
+    in_scope_only = True
+
+
     def _outgoing_dedup_hash(self, event):
         return hash(
             (
@@ -193,26 +200,38 @@ class lightfuzz(BaseModule):
                     if "=" not in v:
                         self.critical(f"DEBUG FOR COOKIE WITHOUT =: {v}")
                     else:
-                        cookie_name = v.split("=")[0]
-                        cookie_value = v.split("=")[1].split(";")[0]
-                        description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
-                        data = {
-                            "host": str(event.host),
-                            "type": "COOKIE",
-                            "name": cookie_name,
-                            "original_value": cookie_value,
-                            "url": event.data["url"],
-                            "description": description,
-                        }
-                        self.emit_event(data, "WEB_PARAMETER", event)
+
+                        in_bl = False
+                        for bl_param in self.parameter_blacklist:
+                            if bl_param.lower() == k.lower():
+                                in_bl = True
+                                continue
+
+
+                        if in_bl == False:
+
+                            cookie_name = v.split("=")[0]
+                            cookie_value = v.split("=")[1].split(";")[0]
+                            description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
+                            data = {
+                                "host": str(event.host),
+                                "type": "COOKIE",
+                                "name": cookie_name,
+                                "original_value": cookie_value,
+                                "url": event.data["url"],
+                                "description": description,
+                            }
+                            self.emit_event(data, "WEB_PARAMETER", event)
 
             # self.hugeinfo(k)
 
             # self.critical(v)
-            return
             body = event.data.get("body", "")
 
             for endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
+
+                in_bl = False
+
                 if endpoint == None:
                     endpoint = "/"
 
@@ -225,17 +244,23 @@ class lightfuzz(BaseModule):
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
                 )
 
-                description = f"HTTP Extracted Parameter [{parameter_name}]"
-                data = {
-                    "host": str(event.host),
-                    "type": "GETPARAM",
-                    "name": parameter_name,
-                    "original_value": original_value,
-                    "url": url,
-                    "description": description,
-                    "regex_name": regex_name,
-                }
-                self.emit_event(data, "WEB_PARAMETER", event)
+                for bl_param in self.parameter_blacklist:
+                    if parameter_name.lower() == bl_param:
+                        in_bl = True
+                        continue
+
+                if in_bl == False:
+                    description = f"HTTP Extracted Parameter [{parameter_name}]"
+                    data = {
+                        "host": str(event.host),
+                        "type": "GETPARAM",
+                        "name": parameter_name,
+                        "original_value": original_value,
+                        "url": url,
+                        "description": description,
+                        "regex_name": regex_name,
+                    }
+                    self.emit_event(data, "WEB_PARAMETER", event)
 
         elif event.type == "WEB_PARAMETER":
             if event.data["type"] == "GETPARAM":
@@ -264,4 +289,8 @@ class lightfuzz(BaseModule):
                         event,
                     )
 
-        # Add extractor for cookies (via set-cookie, or eventually javascript code) and eventually headers (probably just via JS)
+
+    async def filter_event(self, event):
+        if "in-scope" not in event.tags:
+            return False
+        return True
