@@ -1,6 +1,7 @@
 # adapted from https://github.com/bugcrowd/HUNT
 
 from bbot.modules.base import BaseModule
+import statistics
 import re
 
 from bbot.core.helpers.misc import extract_params_html
@@ -24,10 +25,30 @@ class BaseLightfuzz:
 
 
 class SQLiLightfuzz(BaseLightfuzz):
-    async def fuzz(self):
-        self.parent.critical(self.event.data["type"])
+    expected_delay = 5
 
-        probe_value = self.event.data.get("original_value", self.parent.helpers.rand_string(8))
+    def evaluate_delay(self, mean_baseline, measured_delay):
+        margin = 1
+        if (
+            mean_baseline + self.expected_delay - margin
+            <= measured_delay
+            <= mean_baseline + self.expected_delay + margin
+        ):
+            return True
+        else:
+            return False
+
+    async def fuzz(self):
+        self.parent.critical("IN SQLI FUZZ!!!!!!!!!!!!!!!")
+        self.parent.critical(self.event.data["type"])
+        self.parent.hugeinfo(self.event.data.get("original_value"))
+
+        #   probe_value = self.event.data.get("original_value", self.parent.helpers.rand_string(8))
+
+        if "original_value" in self.event.data and self.event.data["original_value"] is not None:
+            probe_value = self.event.data["original_value"]
+        else:
+            probe_value = self.parent.helpers.rand_string(8, numeric_only=True)
 
         if self.event.data["type"] == "GETPARAM":
             baseline_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}"
@@ -42,34 +63,42 @@ class SQLiLightfuzz(BaseLightfuzz):
         elif self.event.data["type"] == "COOKIE":
             cookies = {self.event.data["name"]: f"{self.event.data['original_value']}"}
             http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, cookies=cookies)
-
         elif self.event.data["type"] == "HEADER":
-            pass
+            headers = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, headers=headers)
 
         # Add Single Quote
 
         if self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: f"{self.event.data['original_value']}'"}
+            cookies = {self.event.data["name"]: f"{probe_value}'"}
             single_quote_url = self.event.data["url"]
             single_quote = await http_compare.compare(single_quote_url, cookies=cookies)
-        else:
+        elif self.event.data["type"] == "GETPARAM":
             single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}'"
             single_quote = await http_compare.compare(single_quote_url)
+        elif self.event.data["type"] == "HEADER":
+            headers = {self.event.data["name"]: f"{probe_value}'"}
+            single_quote_url = self.event.data["url"]
+            single_quote = await http_compare.compare(single_quote_url, headers=headers)
         self.parent.hugeinfo("Single Quote URL")
         self.parent.hugewarning(single_quote_url)
         self.parent.critical(single_quote)
 
         # Add Two Single Quotes
         if self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: f"{self.event.data['original_value']}''"}
+            cookies = {self.event.data["name"]: f"{probe_value}''"}
             double_single_quote_url = self.event.data["url"]
             double_single_quote = await http_compare.compare(double_single_quote_url, cookies=cookies)
-        else:
+        elif self.event.data["type"] == "GETPARAM":
             double_single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}''"
             double_single_quote = await http_compare.compare(double_single_quote_url)
+        elif self.event.data["type"] == "HEADER":
+            headers = {self.event.data["name"]: f"{probe_value}''"}
+            double_single_quote_url = self.event.data["url"]
+            double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers)
+
         self.parent.hugeinfo("Double Single Quote URL")
         self.parent.hugewarning(double_single_quote_url)
-
         self.parent.critical(double_single_quote)
         # send error probe
 
@@ -78,11 +107,123 @@ class SQLiLightfuzz(BaseLightfuzz):
                 f"Possible SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Single Quote/Two Single Quote]"
             )
 
-        #
+        self.parent.hugeinfo("STARTING TIME DELAY PROBE")
 
-        # send diff probe
+        delay_probe_strings = [
+            f"'||pg_sleep({str(self.expected_delay)})--",
+            f"1' AND (SLEEP({str(self.expected_delay)})) AND '",
+        ]
+        method = "GET"
 
-        # send delay probe
+        if self.event.data["type"] == "COOKIE":
+            cookies = {self.event.data["name"]: probe_value}
+            baseline_1 = await self.parent.helpers.request(
+                method=method,
+                cookies=cookies,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+            baseline_2 = await self.parent.helpers.request(
+                method=method,
+                cookies=cookies,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+        elif self.event.data["type"] == "GETPARAM":
+            baseline_1 = await self.parent.helpers.request(
+                method=method,
+                url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+            baseline_2 = await self.parent.helpers.request(
+                method=method,
+                url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+        elif self.event.data["type"] == "HEADER":
+            self.parent.critical("PROBE VALUE!")
+            self.parent.critical(probe_value)
+            headers = {self.event.data["name"]: probe_value}
+            baseline_1 = await self.parent.helpers.request(
+                method=method,
+                headers=headers,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+            baseline_2 = await self.parent.helpers.request(
+                method=method,
+                headers=headers,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+
+        if baseline_1 and baseline_2:
+            baseline_1_delay = baseline_1.elapsed.total_seconds()
+            baseline_2_delay = baseline_2.elapsed.total_seconds()
+            mean_baseline = statistics.mean([baseline_1_delay, baseline_2_delay])
+            self.parent.hugeinfo(mean_baseline)
+
+            for p in delay_probe_strings:
+                self.parent.hugeinfo(p)
+                if self.event.data["type"] == "COOKIE":
+                    cookies = {self.event.data["name"]: f"{probe_value}{p}"}
+                    self.parent.hugeinfo(cookies)
+                    r = await self.parent.helpers.request(
+                        method=method,
+                        cookies=cookies,
+                        url=f"{self.event.data['url']}",
+                        allow_redirects=False,
+                        retries=0,
+                        timeout=60,
+                    )
+                elif self.event.data["type"] == "GETPARAM":
+                    r = await self.parent.helpers.request(
+                        method=method,
+                        url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}",
+                        allow_redirects=False,
+                        retries=0,
+                        timeout=60,
+                    )
+
+                elif self.event.data["type"] == "HEADER":
+                    headers = {self.event.data["name"]: f"{probe_value}{p}"}
+                    self.parent.hugeinfo(headers)
+                    self.parent.hugeinfo(f"{self.event.data['url']}")
+                    r = await self.parent.helpers.request(
+                        method=method,
+                        headers=headers,
+                        url=f"{self.event.data['url']}",
+                        allow_redirects=False,
+                        retries=0,
+                        timeout=60,
+                    )
+
+                if not r:
+                    self.parent.critical("delay measure request failed")
+                    continue
+                d = r.elapsed.total_seconds()
+                self.parent.critical("MEASURED DELAY")
+                self.parent.critical(d)
+                if self.evaluate_delay(mean_baseline, d):
+                    self.results.append(
+                        f"Possible Blind SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Delay Probe ({p})]"
+                    )
+                else:
+                    self.parent.hugeinfo("DELAY NOT FOUND")
+        else:
+            self.parent.debug("Could not get baseline for time-delay tests")
 
 
 class XSSLightfuzz(BaseLightfuzz):
@@ -168,17 +309,17 @@ class XSSLightfuzz(BaseLightfuzz):
 
 
 class lightfuzz(BaseModule):
-    watched_events = ["HTTP_RESPONSE", "WEB_PARAMETER"]
+    watched_events = ["URL", "HTTP_RESPONSE", "WEB_PARAMETER"]
     produced_events = ["FINDING", "VULNERABILITY"]
     flags = ["active", "web-thorough"]
+    options = {"force_common_headers": "True"}
+    options_desc = {
+        "force_common_headers": "Force emit commonly exploitable parameters that may be difficult to detect"
+    }
     meta = {"description": "Find Web Parameters and Lightly Fuzz them using a heuristic based scanner"}
-
-
-    parameter_blacklist = ["__VIEWSTATE","__EVENTARGUMENT","JSESSIONID"]
-
-
+    common_headers = ["x-forwarded-for", "user-agent"]
+    parameter_blacklist = ["__VIEWSTATE", "__EVENTARGUMENT", "JSESSIONID"]
     in_scope_only = True
-
 
     def _outgoing_dedup_hash(self, event):
         return hash(
@@ -193,6 +334,25 @@ class lightfuzz(BaseModule):
         )
 
     async def handle_event(self, event):
+        if event.type == "URL":
+            self.critical("GOT URL EVENT IN LIGHTFUZZ")
+            if self.config.get("force_common_headers", False) == False:
+                self.critical("SPECULATIVE HEADERS ARE TURNED OFF")
+                return False
+
+            for h in self.common_headers:
+                description = f"Speculative (Forced) Header [{h}]"
+                self.hugewarning(event.data)
+                data = {
+                    "host": str(event.host),
+                    "type": "HEADER",
+                    "name": h,
+                    "original_value": None,
+                    "url": event.data,
+                    "description": description,
+                }
+                self.emit_event(data, "WEB_PARAMETER", event)
+
         if event.type == "HTTP_RESPONSE":
             headers = event.data.get("header", "")
             for k, v in headers.items():
@@ -200,16 +360,13 @@ class lightfuzz(BaseModule):
                     if "=" not in v:
                         self.critical(f"DEBUG FOR COOKIE WITHOUT =: {v}")
                     else:
-
                         in_bl = False
                         for bl_param in self.parameter_blacklist:
                             if bl_param.lower() == k.lower():
                                 in_bl = True
                                 continue
 
-
                         if in_bl == False:
-
                             cookie_name = v.split("=")[0]
                             cookie_value = v.split("=")[1].split(";")[0]
                             description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
@@ -229,7 +386,6 @@ class lightfuzz(BaseModule):
             body = event.data.get("body", "")
 
             for endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
-
                 in_bl = False
 
                 if endpoint == None:
@@ -239,6 +395,8 @@ class lightfuzz(BaseModule):
                     url = endpoint
                 else:
                     url = f"{str(event.data['scheme'])}://{str(event.host)}{endpoint}"
+                    self.critical("MAKING URL FROM HARVESTED")
+                    self.critical(url)
 
                 self.debug(
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
@@ -288,7 +446,6 @@ class lightfuzz(BaseModule):
                         "FINDING",
                         event,
                     )
-
 
     async def filter_event(self, event):
         if "in-scope" not in event.tags:

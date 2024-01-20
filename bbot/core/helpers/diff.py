@@ -51,6 +51,8 @@ class HttpCompare:
                 method=self.method,
                 headers=self.headers,
                 cookies=self.cookies,
+                retries=2,
+                timeout=15,
             )
             await self.parent_helper.sleep(1)
             # put random parameters in URL, headers, and cookies
@@ -69,6 +71,8 @@ class HttpCompare:
                 ),
                 follow_redirects=self.allow_redirects,
                 method=self.method,
+                retries=2,
+                timeout=15,
             )
 
             self.baseline = baseline_1

@@ -956,7 +956,6 @@ class URL_HINT(URL_UNVERIFIED):
 
 
 class WEB_PARAMETER(DictHostEvent):
-    
     def _url(self):
         return self.data["url"]
 

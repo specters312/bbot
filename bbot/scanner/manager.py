@@ -226,7 +226,6 @@ class ScanManager:
                 log.debug(f"Omitting due to blacklisted {reason}: {event}")
                 return
 
-
             # other blacklist rejections - URL extensions, etc.
             if "blacklisted" in event.tags:
                 log.debug(f"Omitting blacklisted event: {event}")

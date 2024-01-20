@@ -796,13 +796,14 @@ rand_pool = string.ascii_lowercase
 rand_pool_digits = rand_pool + string.digits
 
 
-def rand_string(length=10, digits=True):
+def rand_string(length=10, digits=True, numeric_only=False):
     """
     Generates a random string of specified length.
 
     Args:
         length (int, optional): The length of the random string. Defaults to 10.
         digits (bool, optional): Whether to include digits in the string. Defaults to True.
+        numeric_only (bool, optional): Whether to generate a numeric-only string. Defaults to False.
 
     Returns:
         str: A random string of the specified length.
@@ -814,11 +815,17 @@ def rand_string(length=10, digits=True):
         'ap4rsdtg5iw7ey7y3oa5'
         >>> rand_string(30, digits=False)
         'xdmyxtglqfzqktngkesyulwbfrihva'
+        >>> rand_string(15, numeric_only=True)
+        '934857349857395'
     """
-    pool = rand_pool
-    if digits:
-        pool = rand_pool_digits
-    return "".join([random.choice(pool) for _ in range(int(length))])
+    if numeric_only:
+        pool = string.digits
+    elif digits:
+        pool = string.ascii_letters + string.digits
+    else:
+        pool = string.ascii_letters
+
+    return "".join(random.choice(pool) for _ in range(length))
 
 
 def truncate_string(s, n):
@@ -976,7 +983,6 @@ def extract_params_html(html_data):
 
     a_tag = bbot_regexes.a_tag_regex.findall(html_data)
     for s in a_tag:
-        log.critical(s)
         log.debug(f"FOUND PARAM ({s[1]}) IN A TAG GET PARAMS")
         href = s[0]
         parameter = s[1]
