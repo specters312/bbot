@@ -23,6 +23,53 @@ class BaseLightfuzz:
         if r:
             return r.text
 
+class CmdILightFuzz(BaseLightFUzz):
+    async def fuzz(self):
+
+        if "original_value" in self.event.data and self.event.data["original_value"] is not None:
+            probe_value = self.event.data["original_value"]
+        else:
+            probe_value = self.parent.helpers.rand_string(8, numeric_only=True)
+
+        canary = self.parent.helpers.rand_string(8, numeric_only=True)
+
+        if self.event.data["type"] == "GETPARAM":
+            baseline_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}"
+        else:
+            baseline_url = self.event.data["url"]
+
+        if self.event.data["type"] == "GETPARAM":
+            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False)
+        elif self.event.data["type"] == "COOKIE":
+            cookies = {self.event.data["name"]: probe_value}
+            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, cookies=cookies)
+        elif self.event.data["type"] == "HEADER":
+            headers = {self.event.data["name"]: probe_value}
+            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, headers=headers)
+
+        cmdi_probe_strings = [
+            f";echo {canary}",
+            f"&& {canary}",
+            f"|| {canary}",
+            f"& {canary}",
+            f"| {canary}",
+        ]
+
+        for p in cmdi_probe_strings:
+            self.parent.critical(p)
+            if self.event.data["type"] == "COOKIE":
+                cookies = {self.event.data["name"]: f"{probe_value}{p}"}
+                probe_url = self.event.data["url"]
+                cmdi_probe = await http_compare.compare(single_quote_url, cookies=cookies)
+            elif self.event.data["type"] == "GETPARAM":
+                probe_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}"
+                cmdi_probe = await http_compare.compare(single_quote_url)
+            elif self.event.data["type"] == "HEADER":
+                headers = {self.event.data["name"]: f"{probe_value}{p}"}
+                probe_url = self.event.data["url"]
+                cmdi_probe = await http_compare.compare(single_quote_url, headers=headers)
+            if canary in cmdi_probe:
+                self.parent.critical(f"CANARY FOUND IN PROBE {p}")
 
 class SQLiLightfuzz(BaseLightfuzz):
     expected_delay = 5
@@ -421,31 +468,42 @@ class lightfuzz(BaseModule):
                     self.emit_event(data, "WEB_PARAMETER", event)
 
         elif event.type == "WEB_PARAMETER":
-            if event.data["type"] == "GETPARAM":
-                pass
-                # XSS
-                self.hugeinfo("STARTING XSS FUZZ")
-                xsslf = XSSLightfuzz(self, event)
-                await xsslf.fuzz()
-                if len(xsslf.results) > 0:
-                    for r in xsslf.results:
-                        self.emit_event(
-                            {"host": str(event.host), "url": event.data["url"], "description": r},
-                            "FINDING",
-                            event,
-                        )
+            # if event.data["type"] == "GETPARAM":
+            #     pass
+            #     # XSS
+            #     self.hugeinfo("STARTING XSS FUZZ")
+            #     xsslf = XSSLightfuzz(self, event)
+            #     await xsslf.fuzz()
+            #     if len(xsslf.results) > 0:
+            #         for r in xsslf.results:
+            #             self.emit_event(
+            #                 {"host": str(event.host), "url": event.data["url"], "description": r},
+            #                 "FINDING",
+            #                 event,
+            #             )
 
-            # SQLI
-            self.hugeinfo("STARTING SQLI FUZZ")
-            sqlilf = SQLiLightfuzz(self, event)
-            await sqlilf.fuzz()
+            # # SQLI
+            # self.hugeinfo("STARTING SQLI FUZZ")
+            # sqlilf = SQLiLightfuzz(self, event)
+            # await sqlilf.fuzz()
+            # if len(sqlilf.results) > 0:
+            #     for r in sqlilf.results:
+            #         self.emit_event(
+            #             {"host": str(event.host), "url": event.data["url"], "description": r},
+            #             "FINDING",
+            #             event,
+            #         )
+
+            cmdilf = CmdILightFuzz(self, event)
+            await cmdilf.fuzz()
             if len(sqlilf.results) > 0:
                 for r in sqlilf.results:
                     self.emit_event(
-                        {"host": str(event.host), "url": event.data["url"], "description": r},
-                        "FINDING",
-                        event,
+                         {"host": str(event.host), "url": event.data["url"], "description": r},
+                         "FINDING",
+                         event,
                     )
+
 
     async def filter_event(self, event):
         if "in-scope" not in event.tags:
