@@ -13,7 +13,6 @@ from contextlib import asynccontextmanager
 from httpx._models import Cookies
 
 from bbot.core.errors import WordlistError, CurlError
-from bbot.core.helpers.ratelimiter import RateLimiter
 
 from bs4 import MarkupResemblesLocatorWarning
 from bs4.builder import XMLParsedAsHTMLWarning
@@ -51,7 +50,9 @@ class BBOTAsyncClient(httpx.AsyncClient):
     def __init__(self, *args, **kwargs):
         self._bbot_scan = kwargs.pop("_bbot_scan")
         web_requests_per_second = self._bbot_scan.config.get("web_requests_per_second", 100)
-        self._rate_limiter = RateLimiter(web_requests_per_second, "Web")
+
+        # httpx client has built-in rate limits (via connection pool)
+        kwargs["limits"] = httpx.Limits(max_connections=1, max_keepalive_connections=0)
 
         http_debug = self._bbot_scan.config.get("http_debug", None)
         if http_debug:
@@ -80,10 +81,6 @@ class BBOTAsyncClient(httpx.AsyncClient):
         super().__init__(*args, **kwargs)
         if not self._persist_cookies:
             self._cookies = DummyCookies()
-
-    async def request(self, *args, **kwargs):
-        async with self._rate_limiter:
-            return await super().request(*args, **kwargs)
 
     def build_request(self, *args, **kwargs):
         request = super().build_request(*args, **kwargs)
@@ -224,10 +221,10 @@ class WebHelper:
         async with self._acatch(url, raise_error):
             if self.http_debug:
                 logstr = f"Web request: {str(args)}, {str(kwargs)}"
-                log.debug(logstr)
+                log.trace(logstr)
             response = await client.request(*args, **kwargs)
             if self.http_debug:
-                log.debug(
+                log.trace(
                     f"Web response from {url}: {response} (Length: {len(response.content)}) headers: {response.headers}"
                 )
             return response
