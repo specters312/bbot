@@ -52,7 +52,7 @@ class BBOTAsyncClient(httpx.AsyncClient):
         web_requests_per_second = self._bbot_scan.config.get("web_requests_per_second", 100)
 
         # httpx client has built-in rate limits (via connection pool)
-        kwargs["limits"] = httpx.Limits(max_connections=1, max_keepalive_connections=1)
+        kwargs["limits"] = httpx.Limits(max_connections=1, max_keepalive_connections=0)
 
         http_debug = self._bbot_scan.config.get("http_debug", None)
         if http_debug:
