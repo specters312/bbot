@@ -168,7 +168,6 @@ class ScanManager:
             - Updating scan statistics.
         """
         log.debug(f"Emitting {event}")
-        event_distributed = False
         try:
             on_success_callback = kwargs.pop("on_success_callback", None)
             abort_if = kwargs.pop("abort_if", None)
@@ -211,6 +210,7 @@ class ScanManager:
             log.debug(f"EMIT {event} 3")
 
             if event.type in ("DNS_NAME", "IP_ADDRESS"):
+                event._dns_children = dns_children
                 for tag in dns_tags:
                     event.add_tag(tag)
 
@@ -296,7 +296,7 @@ class ScanManager:
                     abort_result, reason = abort_result
                     msg += f": {reason}"
                 if abort_result:
-                    log.debug(msg)
+                    log.verbose(msg)
                     return
 
             log.debug(f"EMIT {event} 10")
@@ -309,7 +309,6 @@ class ScanManager:
             log.debug(f"EMIT {event} 11")
 
             await self.distribute_event(event)
-            event_distributed = True
 
             log.debug(f"EMIT {event} 12")
 
@@ -318,7 +317,7 @@ class ScanManager:
             if (
                 event.host
                 and event.type not in ("DNS_NAME", "DNS_NAME_UNRESOLVED", "IP_ADDRESS", "IP_RANGE")
-                and not str(event.module) == "speculate"
+                and not (event.type in ("OPEN_TCP_PORT", "URL_UNVERIFIED") and str(event.module) == "speculate")
             ):
                 source_module = self.scan.helpers._make_dummy_module("host", _type="internal")
                 source_module._priority = 4
@@ -364,6 +363,7 @@ class ScanManager:
                                         f'Event validation failed for DNS child of {source_event}: "{record}" ({rdtype}): {e}'
                                     )
                     for child_event in dns_child_events:
+                        log.debug(f"Queueing DNS child for {event}: {child_event}")
                         self.queue_event(child_event)
 
             log.debug(f"EMIT {event} 14")
@@ -374,8 +374,6 @@ class ScanManager:
 
         finally:
             event._resolved.set()
-            if event_distributed:
-                self.scan.stats.event_distributed(event)
             log.debug(f"{event.module}.emit_event() finished for {event}")
 
     def hash_event_graph(self, event):
