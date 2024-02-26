@@ -23,6 +23,7 @@ class BaseLightfuzz:
         if r:
             return r.text
 
+
 class CmdILightFuzz(BaseLightFUzz):
     async def fuzz(self):
 
@@ -70,6 +71,7 @@ class CmdILightFuzz(BaseLightFUzz):
                 cmdi_probe = await http_compare.compare(single_quote_url, headers=headers)
             if canary in cmdi_probe:
                 self.parent.critical(f"CANARY FOUND IN PROBE {p}")
+
 
 class SQLiLightfuzz(BaseLightfuzz):
     expected_delay = 5
@@ -398,7 +400,7 @@ class lightfuzz(BaseModule):
                     "url": event.data,
                     "description": description,
                 }
-                self.emit_event(data, "WEB_PARAMETER", event)
+                await self.emit_event(data, "WEB_PARAMETER", event)
 
         if event.type == "HTTP_RESPONSE":
             headers = event.data.get("header", "")
@@ -425,7 +427,7 @@ class lightfuzz(BaseModule):
                                 "url": event.data["url"],
                                 "description": description,
                             }
-                            self.emit_event(data, "WEB_PARAMETER", event)
+                            await self.emit_event(data, "WEB_PARAMETER", event)
 
             # self.hugeinfo(k)
 
@@ -465,45 +467,44 @@ class lightfuzz(BaseModule):
                         "description": description,
                         "regex_name": regex_name,
                     }
-                    self.emit_event(data, "WEB_PARAMETER", event)
+                    await self.emit_event(data, "WEB_PARAMETER", event)
 
         elif event.type == "WEB_PARAMETER":
-            # if event.data["type"] == "GETPARAM":
-            #     pass
-            #     # XSS
-            #     self.hugeinfo("STARTING XSS FUZZ")
-            #     xsslf = XSSLightfuzz(self, event)
-            #     await xsslf.fuzz()
-            #     if len(xsslf.results) > 0:
-            #         for r in xsslf.results:
-            #             self.emit_event(
-            #                 {"host": str(event.host), "url": event.data["url"], "description": r},
-            #                 "FINDING",
-            #                 event,
-            #             )
+            if event.data["type"] == "GETPARAM":
+                pass
+                # XSS
+                self.hugeinfo("STARTING XSS FUZZ")
+                xsslf = XSSLightfuzz(self, event)
+                await xsslf.fuzz()
+                if len(xsslf.results) > 0:
+                    for r in xsslf.results:
+                        self.emit_event(
+                            {"host": str(event.host), "url": event.data["url"], "description": r},
+                            "FINDING",
+                            event,
+                        )
 
-            # # SQLI
-            # self.hugeinfo("STARTING SQLI FUZZ")
-            # sqlilf = SQLiLightfuzz(self, event)
-            # await sqlilf.fuzz()
-            # if len(sqlilf.results) > 0:
-            #     for r in sqlilf.results:
-            #         self.emit_event(
-            #             {"host": str(event.host), "url": event.data["url"], "description": r},
-            #             "FINDING",
-            #             event,
-            #         )
+            # SQLI
+            self.hugeinfo("STARTING SQLI FUZZ")
+            sqlilf = SQLiLightfuzz(self, event)
+            await sqlilf.fuzz()
+            if len(sqlilf.results) > 0:
+                for r in sqlilf.results:
+                    self.emit_event(
+                        {"host": str(event.host), "url": event.data["url"], "description": r},
+                        "FINDING",
+                        event,
+                    )
 
             cmdilf = CmdILightFuzz(self, event)
             await cmdilf.fuzz()
             if len(sqlilf.results) > 0:
                 for r in sqlilf.results:
                     self.emit_event(
-                         {"host": str(event.host), "url": event.data["url"], "description": r},
-                         "FINDING",
-                         event,
+                        {"host": str(event.host), "url": event.data["url"], "description": r},
+                        "FINDING",
+                        event,
                     )
-
 
     async def filter_event(self, event):
         if "in-scope" not in event.tags:
