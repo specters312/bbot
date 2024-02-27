@@ -18,6 +18,7 @@ class HttpCompare:
         include_cache_buster=True,
         headers=None,
         cookies=None,
+        timeout=15,
     ):
         self.parent_helper = parent_helper
         self.baseline_url = baseline_url
@@ -27,6 +28,7 @@ class HttpCompare:
         self._baselined = False
         self.headers = headers
         self.cookies = cookies
+        self.timeout = 15
 
     @staticmethod
     def merge_dictionaries(headers1, headers2):
@@ -51,7 +53,7 @@ class HttpCompare:
                 headers=self.headers,
                 cookies=self.cookies,
                 retries=2,
-                timeout=15,
+                timeout=self.timeout,
             )
             await self.parent_helper.sleep(1)
             # put random parameters in URL, headers, and cookies
@@ -71,7 +73,7 @@ class HttpCompare:
                 follow_redirects=self.allow_redirects,
                 method=self.method,
                 retries=2,
-                timeout=15,
+                timeout=self.timeout,
             )
 
             self.baseline = baseline_1
@@ -156,7 +158,14 @@ class HttpCompare:
             return False
 
     async def compare(
-        self, subject, headers=None, cookies=None, check_reflection=False, method="GET", allow_redirects=False
+        self,
+        subject,
+        headers=None,
+        cookies=None,
+        check_reflection=False,
+        method="GET",
+        allow_redirects=False,
+        timeout=None,
     ):
         """
         Compares a URL with the baseline, with optional headers or cookies added
@@ -166,7 +175,11 @@ class HttpCompare:
                 "reason" is the location of the change ("code", "body", "header", or None), and
                 "reflection" is whether the value was reflected in the HTTP response
         """
+
         await self._baseline()
+
+        if timeout == None:
+            timeout = self.timeout
 
         reflection = False
         if self.include_cache_buster:
@@ -175,7 +188,7 @@ class HttpCompare:
         else:
             url = subject
         subject_response = await self.parent_helper.request(
-            url, headers=headers, cookies=cookies, follow_redirects=allow_redirects, method=method
+            url, headers=headers, cookies=cookies, follow_redirects=allow_redirects, method=method, timeout=timeout
         )
 
         if subject_response is None:
@@ -247,7 +260,7 @@ class HttpCompare:
                 raise ValueError(f'Invalid mode: "{mode}", choose from: getparam, header, cookie')
 
             match, reasons, reflection, subject_response = await self.compare(
-                new_url, headers=headers, cookies=cookies
+                new_url, headers=headers, cookies=cookies, timeout=15
             )
 
             # a nonsense header "caused" a difference, we need to abort
