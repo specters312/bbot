@@ -3,6 +3,7 @@
 from bbot.modules.base import BaseModule
 import statistics
 import re
+import urllib.parse
 
 from bbot.core.helpers.misc import extract_params_html
 
@@ -24,10 +25,15 @@ class BaseLightfuzz:
             return r.text
 
 
-class CmdILightFuzz(BaseLightFUzz):
+class CmdILightFuzz(BaseLightfuzz):
     async def fuzz(self):
 
-        if "original_value" in self.event.data and self.event.data["original_value"] is not None:
+        if (
+            "original_value" in self.event.data
+            and self.event.data["original_value"] is not None
+            and len(self.event.data["original_value"]) != 0
+        ):
+            self.parent.hugeinfo(len(self.event.data["original_value"]))
             probe_value = self.event.data["original_value"]
         else:
             probe_value = self.parent.helpers.rand_string(8, numeric_only=True)
@@ -35,42 +41,56 @@ class CmdILightFuzz(BaseLightFUzz):
         canary = self.parent.helpers.rand_string(8, numeric_only=True)
 
         if self.event.data["type"] == "GETPARAM":
-            baseline_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}"
+            query_string = f"{self.event.data['name']}={probe_value}"
+            baseline_url = f"{self.event.data['url']}?{query_string}"
         else:
             baseline_url = self.event.data["url"]
 
         if self.event.data["type"] == "GETPARAM":
-            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False)
+            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, timeout=15)
         elif self.event.data["type"] == "COOKIE":
             cookies = {self.event.data["name"]: probe_value}
-            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, cookies=cookies)
+            http_compare = self.parent.helpers.http_compare(
+                baseline_url, include_cache_buster=False, cookies=cookies, timeout=15
+            )
         elif self.event.data["type"] == "HEADER":
             headers = {self.event.data["name"]: probe_value}
-            http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False, headers=headers)
+            http_compare = self.parent.helpers.http_compare(
+                baseline_url, include_cache_buster=False, headers=headers, timeout=15
+            )
 
         cmdi_probe_strings = [
-            f";echo {canary}",
-            f"&& {canary}",
-            f"|| {canary}",
-            f"& {canary}",
-            f"| {canary}",
+            f";echo",
+            f"&& echo",
+            f"|| echo",
+            f"& echo",
+            f"| echo",
+            f"MMMM echo",
         ]
 
+        positive_detections = []
         for p in cmdi_probe_strings:
-            self.parent.critical(p)
+            probe = f"{p} {canary}"
             if self.event.data["type"] == "COOKIE":
-                cookies = {self.event.data["name"]: f"{probe_value}{p}"}
+                cookies = {self.event.data["name"]: f"{probe_value}{probe}"}
                 probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(single_quote_url, cookies=cookies)
+                cmdi_probe = await http_compare.compare(probe_url, cookies=cookies, timeout=15)
             elif self.event.data["type"] == "GETPARAM":
-                probe_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}"
-                cmdi_probe = await http_compare.compare(single_quote_url)
+                encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
+                probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
+                cmdi_probe = await http_compare.compare(probe_url, timeout=15)
             elif self.event.data["type"] == "HEADER":
-                headers = {self.event.data["name"]: f"{probe_value}{p}"}
+                headers = {self.event.data["name"]: f"{probe_value}{probe}"}
                 probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(single_quote_url, headers=headers)
-            if canary in cmdi_probe:
-                self.parent.critical(f"CANARY FOUND IN PROBE {p}")
+                cmdi_probe = await http_compare.compare(probe_url, headers=headers, timeout=15)
+            if cmdi_probe[3]:
+                if canary in cmdi_probe[3].text:
+                    self.parent.debug(f"canary [{canary}] found in response when sending probe [{p}]")
+                    positive_detections.append(p)
+        if len(positive_detections) > 0:
+            self.results.append(
+                f"Possible OS Command Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [echo canary] CMD Probe String: [{','.join(positive_detections)}]"
+            )
 
 
 class SQLiLightfuzz(BaseLightfuzz):
@@ -88,11 +108,6 @@ class SQLiLightfuzz(BaseLightfuzz):
             return False
 
     async def fuzz(self):
-        self.parent.critical("IN SQLI FUZZ!!!!!!!!!!!!!!!")
-        self.parent.critical(self.event.data["type"])
-        self.parent.hugeinfo(self.event.data.get("original_value"))
-
-        #   probe_value = self.event.data.get("original_value", self.parent.helpers.rand_string(8))
 
         if "original_value" in self.event.data and self.event.data["original_value"] is not None:
             probe_value = self.event.data["original_value"]
@@ -103,9 +118,6 @@ class SQLiLightfuzz(BaseLightfuzz):
             baseline_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}"
         else:
             baseline_url = self.event.data["url"]
-
-        self.parent.hugeinfo("baseline URL")
-        self.parent.hugewarning(baseline_url)
 
         if self.event.data["type"] == "GETPARAM":
             http_compare = self.parent.helpers.http_compare(baseline_url, include_cache_buster=False)
@@ -198,8 +210,6 @@ class SQLiLightfuzz(BaseLightfuzz):
                 timeout=10,
             )
         elif self.event.data["type"] == "HEADER":
-            self.parent.critical("PROBE VALUE!")
-            self.parent.critical(probe_value)
             headers = {self.event.data["name"]: probe_value}
             baseline_1 = await self.parent.helpers.request(
                 method=method,
@@ -228,7 +238,6 @@ class SQLiLightfuzz(BaseLightfuzz):
                 self.parent.hugeinfo(p)
                 if self.event.data["type"] == "COOKIE":
                     cookies = {self.event.data["name"]: f"{probe_value}{p}"}
-                    self.parent.hugeinfo(cookies)
                     r = await self.parent.helpers.request(
                         method=method,
                         cookies=cookies,
@@ -248,8 +257,6 @@ class SQLiLightfuzz(BaseLightfuzz):
 
                 elif self.event.data["type"] == "HEADER":
                     headers = {self.event.data["name"]: f"{probe_value}{p}"}
-                    self.parent.hugeinfo(headers)
-                    self.parent.hugeinfo(f"{self.event.data['url']}")
                     r = await self.parent.helpers.request(
                         method=method,
                         headers=headers,
@@ -361,7 +368,7 @@ class lightfuzz(BaseModule):
     watched_events = ["URL", "HTTP_RESPONSE", "WEB_PARAMETER"]
     produced_events = ["FINDING", "VULNERABILITY"]
     flags = ["active", "web-thorough"]
-    options = {"force_common_headers": "True"}
+    options = {"force_common_headers": False}
     options_desc = {
         "force_common_headers": "Force emit commonly exploitable parameters that may be difficult to detect"
     }
@@ -385,13 +392,19 @@ class lightfuzz(BaseModule):
     async def handle_event(self, event):
         if event.type == "URL":
             self.critical("GOT URL EVENT IN LIGHTFUZZ")
+            self.hugeinfo(self.config.get("force_common_headers", False))
+            self.hugeinfo(self.config.get("force_common_headers", False) == False)
+
+            self.critical("THIS IS THE ONE:")
+            self.critical(self.config.get("force_common_headers", False))
             if self.config.get("force_common_headers", False) == False:
+
                 self.critical("SPECULATIVE HEADERS ARE TURNED OFF")
                 return False
+            self.hugewarning("GOT PAST RETURN")
 
             for h in self.common_headers:
                 description = f"Speculative (Forced) Header [{h}]"
-                self.hugewarning(event.data)
                 data = {
                     "host": str(event.host),
                     "type": "HEADER",
@@ -435,10 +448,14 @@ class lightfuzz(BaseModule):
             body = event.data.get("body", "")
 
             for endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
+                self.critical("!!!!!!!!!!!!!")
+                self.critical(endpoint)
+                self.critical(event.data["url"])
+                self.critical("!!!!!!!!!!!!!!!!!")
                 in_bl = False
 
                 if endpoint == None:
-                    endpoint = "/"
+                    endpoint = event.data["url"]
 
                 if endpoint.startswith("http://") or endpoint.startswith("https://"):
                     url = endpoint
@@ -470,37 +487,38 @@ class lightfuzz(BaseModule):
                     await self.emit_event(data, "WEB_PARAMETER", event)
 
         elif event.type == "WEB_PARAMETER":
-            if event.data["type"] == "GETPARAM":
-                pass
-                # XSS
-                self.hugeinfo("STARTING XSS FUZZ")
-                xsslf = XSSLightfuzz(self, event)
-                await xsslf.fuzz()
-                if len(xsslf.results) > 0:
-                    for r in xsslf.results:
-                        self.emit_event(
-                            {"host": str(event.host), "url": event.data["url"], "description": r},
-                            "FINDING",
-                            event,
-                        )
+            # if event.data["type"] == "GETPARAM":
+            #     pass
+            #     # XSS
+            #     self.hugeinfo("STARTING XSS FUZZ")
+            #     xsslf = XSSLightfuzz(self, event)
+            #     await xsslf.fuzz()
+            #     if len(xsslf.results) > 0:
+            #         for r in xsslf.results:
+            #             await self.emit_event(
+            #                 {"host": str(event.host), "url": event.data["url"], "description": r},
+            #                 "FINDING",
+            #                 event,
+            #             )
 
-            # SQLI
-            self.hugeinfo("STARTING SQLI FUZZ")
-            sqlilf = SQLiLightfuzz(self, event)
-            await sqlilf.fuzz()
-            if len(sqlilf.results) > 0:
-                for r in sqlilf.results:
-                    self.emit_event(
-                        {"host": str(event.host), "url": event.data["url"], "description": r},
-                        "FINDING",
-                        event,
-                    )
+            # # SQLI
+            # self.hugeinfo("STARTING SQLI FUZZ")
+            # sqlilf = SQLiLightfuzz(self, event)
+            # await sqlilf.fuzz()
+            # if len(sqlilf.results) > 0:
+            #     for r in sqlilf.results:
+            #         await self.emit_event(
+            #             {"host": str(event.host), "url": event.data["url"], "description": r},
+            #             "FINDING",
+            #             event,
+            #         )
+            self.hugeinfo("in web parameter")
 
             cmdilf = CmdILightFuzz(self, event)
             await cmdilf.fuzz()
-            if len(sqlilf.results) > 0:
-                for r in sqlilf.results:
-                    self.emit_event(
+            if len(cmdilf.results) > 0:
+                for r in cmdilf.results:
+                    await self.emit_event(
                         {"host": str(event.host), "url": event.data["url"], "description": r},
                         "FINDING",
                         event,
