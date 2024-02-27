@@ -1007,12 +1007,11 @@ def extract_params_html(html_data):
 
     # Check "get forms" for input tags
     get_form = bbot_regexes.get_form_regex.findall(html_data)
-    log.critical(get_form)
+    #log.critical(get_form)
     for i in get_form:
         form_action = i[0]
         log.hugewarning(i[1])
         input_tag = bbot_regexes.input_tag_regex.findall(i[1])
-        log.critical(input_tag)
         for i in input_tag:
             parameter = i[0]
             if len(i) > 1:

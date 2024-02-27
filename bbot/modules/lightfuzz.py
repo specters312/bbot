@@ -89,8 +89,52 @@ class CmdILightFuzz(BaseLightfuzz):
                     positive_detections.append(p)
         if len(positive_detections) > 0:
             self.results.append(
-                f"Possible OS Command Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [echo canary] CMD Probe String: [{','.join(positive_detections)}]"
+                {
+                    "type": "FINDING",
+                    "description": f"POSSIBLE OS Command Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [echo canary] CMD Probe String: [{','.join(positive_detections)}]",
+                }
             )
+
+        blind_cmdi_probe_strings = [
+            f";nslookup," f"&& nslookup",
+            f"|| nslookup",
+            f"& nslookup",
+            f"| nslookup",
+            f"MMMM nslookup",
+        ]
+
+        # Blind OS Command Injection
+        if self.parent.interactsh_instance:
+            self.parent.event_dict[self.event.data["url"]] = self.event
+            
+
+            for p in blind_cmdi_probe_strings:
+
+                subdomain_tag = self.parent.helpers.rand_string(4, digits=False)
+                self.parent.interactsh_subdomain_tags[subdomain_tag] = {"event": self.event,"type":self.event.data["type"],"name":self.event.data['name'],"probe":p}
+                probe = f"{p} {subdomain_tag}.{self.parent.interactsh_domain}"
+
+                if self.event.data["type"] == "COOKIE":
+                    cookies = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    probe_url = self.event.data["url"]
+                    await self.parent.helpers.request(
+                        method="GET", url=probe_url, allow_redirects=False, cookies=cookies, timeout=15
+                    )
+                elif self.event.data["type"] == "GETPARAM":
+                    encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
+                    probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
+                    await self.parent.helpers.request(method="GET", url=probe_url, allow_redirects=False, timeout=15)
+                elif self.event.data["type"] == "HEADER":
+                    headers = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    probe_url = self.event.data["url"]
+                    await self.parent.helpers.request(
+                        method="GET", url=probe_url, allow_redirects=False, headers=headers, timeout=15
+                    )
+        else:
+            self.debug(
+                "Aborting Blind Command Injection check due to interactsh global disable or interactsh setup failure"
+            )
+            return None
 
 
 class SQLiLightfuzz(BaseLightfuzz):
@@ -141,9 +185,9 @@ class SQLiLightfuzz(BaseLightfuzz):
             headers = {self.event.data["name"]: f"{probe_value}'"}
             single_quote_url = self.event.data["url"]
             single_quote = await http_compare.compare(single_quote_url, headers=headers)
-        self.parent.hugeinfo("Single Quote URL")
-        self.parent.hugewarning(single_quote_url)
-        self.parent.critical(single_quote)
+     #   self.parent.hugeinfo("Single Quote URL")
+     #   self.parent.hugewarning(single_quote_url)
+     #   self.parent.critical(single_quote)
 
         # Add Two Single Quotes
         if self.event.data["type"] == "COOKIE":
@@ -158,14 +202,17 @@ class SQLiLightfuzz(BaseLightfuzz):
             double_single_quote_url = self.event.data["url"]
             double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers)
 
-        self.parent.hugeinfo("Double Single Quote URL")
-        self.parent.hugewarning(double_single_quote_url)
-        self.parent.critical(double_single_quote)
+      #  self.parent.hugeinfo("Double Single Quote URL")
+      #  self.parent.hugewarning(double_single_quote_url)
+      #  self.parent.critical(double_single_quote)
         # send error probe
 
         if "code" in single_quote[1] and "code" not in double_single_quote[1]:
             self.results.append(
-                f"Possible SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Single Quote/Two Single Quote]"
+                {
+                    "type": "FINDING",
+                    "description": f"Possible SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Single Quote/Two Single Quote]",
+                }
             )
 
         self.parent.hugeinfo("STARTING TIME DELAY PROBE")
@@ -274,7 +321,10 @@ class SQLiLightfuzz(BaseLightfuzz):
                 self.parent.critical(d)
                 if self.evaluate_delay(mean_baseline, d):
                     self.results.append(
-                        f"Possible Blind SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Delay Probe ({p})]"
+                        {
+                            "type": "FINDING",
+                            "description": f"Possible Blind SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Delay Probe ({p})]",
+                        }
                     )
                 else:
                     self.parent.hugeinfo("DELAY NOT FOUND")
@@ -341,7 +391,10 @@ class XSSLightfuzz(BaseLightfuzz):
             if probe_result:
                 if between_tags_probe in probe_result:
                     self.results.append(
-                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Between Tags]"
+                        {
+                            "type": "FINDING",
+                            "description": f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Between Tags]",
+                        }
                     )
 
         if in_tag_attribute:
@@ -351,7 +404,10 @@ class XSSLightfuzz(BaseLightfuzz):
             if probe_result:
                 if in_tag_attribute_match in probe_result:
                     self.results.append(
-                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Tab Attribute]"
+                        {
+                            "type": "FINDING",
+                            "description": f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [Tab Attribute]",
+                        }
                     )
 
         if in_javascript:
@@ -360,7 +416,10 @@ class XSSLightfuzz(BaseLightfuzz):
             if probe_result:
                 if in_javascript_probe in probe_result:
                     self.results.append(
-                        f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [In Javascript]"
+                        {
+                            "type": "FINDING",
+                            "description": f"Possible Reflected XSS. Parameter: [{self.event.data['name']}] Context: [In Javascript]",
+                        }
                     )
 
 
@@ -377,6 +436,42 @@ class lightfuzz(BaseModule):
     parameter_blacklist = ["__VIEWSTATE", "__EVENTARGUMENT", "JSESSIONID"]
     in_scope_only = True
 
+    async def setup(self):
+        self.event_dict = {}
+        self.interactsh_subdomain_tags = {}
+        self.interactsh_instance = None
+
+        if self.scan.config.get("interactsh_disable", False) == False:
+
+            try:
+                self.interactsh_instance = self.helpers.interactsh()
+                self.interactsh_domain = await self.interactsh_instance.register(callback=self.interactsh_callback)
+            except InteractshError as e:
+                self.warning(f"Interactsh failure: {e}")
+
+        return True
+
+    async def interactsh_callback(self, r):
+        full_id = r.get("full-id", None)
+        if full_id:
+            if "." in full_id:
+                details = self.interactsh_subdomain_tags.get(full_id.split(".")[0])
+                if not details["event"]:
+                    return
+                await self.emit_event(
+                    {
+                        "severity": "CRITICAL",
+                        "host": str(details["event"].host),
+                        "url": details["event"].data["url"],
+                        "description": f"OS Command Injection (OOB Interaction) Type: [{details['type']}] Parameter Name: [{details['name']}] Probe: [{details['probe']}]",
+                    },
+                    "VULNERABILITY",
+                    details["event"],
+                )
+            else:
+                # this is likely caused by something trying to resolve the base domain first and can be ignored
+                self.debug("skipping result because subdomain tag was missing")
+
     def _outgoing_dedup_hash(self, event):
         return hash(
             (
@@ -391,17 +486,9 @@ class lightfuzz(BaseModule):
 
     async def handle_event(self, event):
         if event.type == "URL":
-            self.critical("GOT URL EVENT IN LIGHTFUZZ")
-            self.hugeinfo(self.config.get("force_common_headers", False))
-            self.hugeinfo(self.config.get("force_common_headers", False) == False)
-
-            self.critical("THIS IS THE ONE:")
-            self.critical(self.config.get("force_common_headers", False))
             if self.config.get("force_common_headers", False) == False:
 
-                self.critical("SPECULATIVE HEADERS ARE TURNED OFF")
                 return False
-            self.hugewarning("GOT PAST RETURN")
 
             for h in self.common_headers:
                 description = f"Speculative (Forced) Header [{h}]"
@@ -442,16 +529,9 @@ class lightfuzz(BaseModule):
                             }
                             await self.emit_event(data, "WEB_PARAMETER", event)
 
-            # self.hugeinfo(k)
-
-            # self.critical(v)
             body = event.data.get("body", "")
 
             for endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
-                self.critical("!!!!!!!!!!!!!")
-                self.critical(endpoint)
-                self.critical(event.data["url"])
-                self.critical("!!!!!!!!!!!!!!!!!")
                 in_bl = False
 
                 if endpoint == None:
@@ -461,8 +541,6 @@ class lightfuzz(BaseModule):
                     url = endpoint
                 else:
                     url = f"{str(event.data['scheme'])}://{str(event.host)}{endpoint}"
-                    self.critical("MAKING URL FROM HARVESTED")
-                    self.critical(url)
 
                 self.debug(
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
@@ -496,7 +574,7 @@ class lightfuzz(BaseModule):
             #     if len(xsslf.results) > 0:
             #         for r in xsslf.results:
             #             await self.emit_event(
-            #                 {"host": str(event.host), "url": event.data["url"], "description": r},
+            #                 {"host": str(event.host), "url": event.data["url"], "description": r['description']}},
             #                 "FINDING",
             #                 event,
             #             )
@@ -508,23 +586,53 @@ class lightfuzz(BaseModule):
             # if len(sqlilf.results) > 0:
             #     for r in sqlilf.results:
             #         await self.emit_event(
-            #             {"host": str(event.host), "url": event.data["url"], "description": r},
+            #             {"host": str(event.host), "url": event.data["url"], "description": r['description']}},
             #             "FINDING",
             #             event,
             #         )
-            self.hugeinfo("in web parameter")
 
             cmdilf = CmdILightFuzz(self, event)
             await cmdilf.fuzz()
             if len(cmdilf.results) > 0:
                 for r in cmdilf.results:
-                    await self.emit_event(
-                        {"host": str(event.host), "url": event.data["url"], "description": r},
-                        "FINDING",
-                        event,
-                    )
+                    if r["type"] == "FINDING":
+                        await self.emit_event(
+                            {"host": str(event.host), "url": event.data["url"], "description": r["description"]},
+                            "FINDING",
+                            event,
+                        )
+                    elif r["type"] == "VULNERABILITY":
+                        await self.emit_event(
+                            {
+                                "host": str(event.host),
+                                "url": event.data["url"],
+                                "description": r["description"],
+                                "severity": r["severity"],
+                            },
+                            "VULNERABILITY",
+                            event,
+                        )
 
     async def filter_event(self, event):
         if "in-scope" not in event.tags:
             return False
         return True
+
+    async def cleanup(self):
+        if self.interactsh_instance:
+            try:
+                await self.interactsh_instance.deregister()
+                self.debug(
+                    f"successfully deregistered interactsh session with correlation_id {self.interactsh_instance.correlation_id}"
+                )
+            except InteractshError as e:
+                self.warning(f"Interactsh failure: {e}")
+
+    async def finish(self):
+        if self.interactsh_instance:
+            await self.helpers.sleep(5)
+            try:
+                for r in await self.interactsh_instance.poll():
+                    await self.interactsh_callback(r)
+            except InteractshError as e:
+                self.debug(f"Error in interact.sh: {e}")
