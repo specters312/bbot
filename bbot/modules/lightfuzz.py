@@ -6,6 +6,7 @@ import re
 import urllib.parse
 
 from bbot.core.helpers.misc import extract_params_html
+from bbot.core.errors import InteractshError
 
 
 class BaseLightfuzz:
@@ -33,7 +34,6 @@ class CmdILightFuzz(BaseLightfuzz):
             and self.event.data["original_value"] is not None
             and len(self.event.data["original_value"]) != 0
         ):
-            self.parent.hugeinfo(len(self.event.data["original_value"]))
             probe_value = self.event.data["original_value"]
         else:
             probe_value = self.parent.helpers.rand_string(8, numeric_only=True)
@@ -106,12 +106,16 @@ class CmdILightFuzz(BaseLightfuzz):
         # Blind OS Command Injection
         if self.parent.interactsh_instance:
             self.parent.event_dict[self.event.data["url"]] = self.event
-            
 
             for p in blind_cmdi_probe_strings:
 
                 subdomain_tag = self.parent.helpers.rand_string(4, digits=False)
-                self.parent.interactsh_subdomain_tags[subdomain_tag] = {"event": self.event,"type":self.event.data["type"],"name":self.event.data['name'],"probe":p}
+                self.parent.interactsh_subdomain_tags[subdomain_tag] = {
+                    "event": self.event,
+                    "type": self.event.data["type"],
+                    "name": self.event.data["name"],
+                    "probe": p,
+                }
                 probe = f"{p} {subdomain_tag}.{self.parent.interactsh_domain}"
 
                 if self.event.data["type"] == "COOKIE":
@@ -185,9 +189,9 @@ class SQLiLightfuzz(BaseLightfuzz):
             headers = {self.event.data["name"]: f"{probe_value}'"}
             single_quote_url = self.event.data["url"]
             single_quote = await http_compare.compare(single_quote_url, headers=headers)
-     #   self.parent.hugeinfo("Single Quote URL")
-     #   self.parent.hugewarning(single_quote_url)
-     #   self.parent.critical(single_quote)
+        #   self.parent.hugeinfo("Single Quote URL")
+        #   self.parent.hugewarning(single_quote_url)
+        #   self.parent.critical(single_quote)
 
         # Add Two Single Quotes
         if self.event.data["type"] == "COOKIE":
@@ -202,9 +206,9 @@ class SQLiLightfuzz(BaseLightfuzz):
             double_single_quote_url = self.event.data["url"]
             double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers)
 
-      #  self.parent.hugeinfo("Double Single Quote URL")
-      #  self.parent.hugewarning(double_single_quote_url)
-      #  self.parent.critical(double_single_quote)
+        #  self.parent.hugeinfo("Double Single Quote URL")
+        #  self.parent.hugewarning(double_single_quote_url)
+        #  self.parent.critical(double_single_quote)
         # send error probe
 
         if "code" in single_quote[1] and "code" not in double_single_quote[1]:
@@ -427,9 +431,12 @@ class lightfuzz(BaseModule):
     watched_events = ["URL", "HTTP_RESPONSE", "WEB_PARAMETER"]
     produced_events = ["FINDING", "VULNERABILITY"]
     flags = ["active", "web-thorough"]
-    options = {"force_common_headers": False}
+    options = {"force_common_headers": False, "submodule_sqli": False, "submodule_xss": False, "submodule_cmdi": True}
     options_desc = {
-        "force_common_headers": "Force emit commonly exploitable parameters that may be difficult to detect"
+        "force_common_headers": "Force emit commonly exploitable parameters that may be difficult to detect",
+        "submodule_sqli": "Enable the SQL Injection Submodule",
+        "submodule_xss": "Enable the XSS Submodule",
+        "submodule_cmdi": "Enable the Command Injection Submodule",
     }
     meta = {"description": "Find Web Parameters and Lightly Fuzz them using a heuristic based scanner"}
     common_headers = ["x-forwarded-for", "user-agent"]
@@ -441,13 +448,29 @@ class lightfuzz(BaseModule):
         self.interactsh_subdomain_tags = {}
         self.interactsh_instance = None
 
-        if self.scan.config.get("interactsh_disable", False) == False:
+        self.submodule_sqli = False
+        self.submodule_cmdi = False
+        self.submodule_xss = False
 
-            try:
-                self.interactsh_instance = self.helpers.interactsh()
-                self.interactsh_domain = await self.interactsh_instance.register(callback=self.interactsh_callback)
-            except InteractshError as e:
-                self.warning(f"Interactsh failure: {e}")
+        if self.config.get("submodule_sqli", False) == True:
+            self.submodule_sqli = True
+            self.critical("SQL Injection Submodule Enabled")
+
+        if self.config.get("submodule_xss", False) == True:
+            self.submodule_xss = True
+            self.critical("XSS Submodule Enabled")
+
+        if self.config.get("submodule_cmdi", False) == True:
+            self.submodule_cmdi = True
+            self.critical("Command Injection Submodule Enabled")
+
+            if self.scan.config.get("interactsh_disable", False) == False:
+
+                try:
+                    self.interactsh_instance = self.helpers.interactsh()
+                    self.interactsh_domain = await self.interactsh_instance.register(callback=self.interactsh_callback)
+                except InteractshError as e:
+                    self.warning(f"Interactsh failure: {e}")
 
         return True
 
@@ -531,7 +554,7 @@ class lightfuzz(BaseModule):
 
             body = event.data.get("body", "")
 
-            for endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
+            for method, endpoint, parameter_name, original_value, regex_name in extract_params_html(body):
                 in_bl = False
 
                 if endpoint == None:
@@ -546,6 +569,14 @@ class lightfuzz(BaseModule):
                     f"extract_params_html returned: endpoint [{endpoint}], parameter_name [{parameter_name}], regex_name [{regex_name}]"
                 )
 
+                if method == None or method == "GET":
+                    paramtype = "GETPARAM"
+                elif method == "POST":
+                    paramtype = "POSTPARAM"
+                else:
+                    self.warning(f"Invalid method received! ({method})")
+                    continue
+
                 for bl_param in self.parameter_blacklist:
                     if parameter_name.lower() == bl_param:
                         in_bl = True
@@ -555,7 +586,7 @@ class lightfuzz(BaseModule):
                     description = f"HTTP Extracted Parameter [{parameter_name}]"
                     data = {
                         "host": str(event.host),
-                        "type": "GETPARAM",
+                        "type": paramtype,
                         "name": parameter_name,
                         "original_value": original_value,
                         "url": url,
@@ -565,53 +596,57 @@ class lightfuzz(BaseModule):
                     await self.emit_event(data, "WEB_PARAMETER", event)
 
         elif event.type == "WEB_PARAMETER":
-            # if event.data["type"] == "GETPARAM":
-            #     pass
-            #     # XSS
-            #     self.hugeinfo("STARTING XSS FUZZ")
-            #     xsslf = XSSLightfuzz(self, event)
-            #     await xsslf.fuzz()
-            #     if len(xsslf.results) > 0:
-            #         for r in xsslf.results:
-            #             await self.emit_event(
-            #                 {"host": str(event.host), "url": event.data["url"], "description": r['description']}},
-            #                 "FINDING",
-            #                 event,
-            #             )
 
-            # # SQLI
-            # self.hugeinfo("STARTING SQLI FUZZ")
-            # sqlilf = SQLiLightfuzz(self, event)
-            # await sqlilf.fuzz()
-            # if len(sqlilf.results) > 0:
-            #     for r in sqlilf.results:
-            #         await self.emit_event(
-            #             {"host": str(event.host), "url": event.data["url"], "description": r['description']}},
-            #             "FINDING",
-            #             event,
-            #         )
+            if self.submodule_xss:
+                if event.data["type"] == "GETPARAM":
+                    self.hugeinfo("STARTING XSS FUZZ")
+                    xsslf = XSSLightfuzz(self, event)
+                    await xsslf.fuzz()
+                    if len(xsslf.results) > 0:
+                        for r in xsslf.results:
+                            await self.emit_event(
+                                {"host": str(event.host), "url": event.data["url"], "description": r["description"]},
+                                "FINDING",
+                                event,
+                            )
 
-            cmdilf = CmdILightFuzz(self, event)
-            await cmdilf.fuzz()
-            if len(cmdilf.results) > 0:
-                for r in cmdilf.results:
-                    if r["type"] == "FINDING":
+            if self.submodule_sqli:
+                self.hugeinfo("STARTING SQLI FUZZ")
+                sqlilf = SQLiLightfuzz(self, event)
+                await sqlilf.fuzz()
+                if len(sqlilf.results) > 0:
+                    for r in sqlilf.results:
                         await self.emit_event(
                             {"host": str(event.host), "url": event.data["url"], "description": r["description"]},
                             "FINDING",
                             event,
                         )
-                    elif r["type"] == "VULNERABILITY":
-                        await self.emit_event(
-                            {
-                                "host": str(event.host),
-                                "url": event.data["url"],
-                                "description": r["description"],
-                                "severity": r["severity"],
-                            },
-                            "VULNERABILITY",
-                            event,
-                        )
+
+            if self.submodule_cmdi:
+
+                self.hugeinfo("Starting CMDI FUZZ")
+
+                cmdilf = CmdILightFuzz(self, event)
+                await cmdilf.fuzz()
+                if len(cmdilf.results) > 0:
+                    for r in cmdilf.results:
+                        if r["type"] == "FINDING":
+                            await self.emit_event(
+                                {"host": str(event.host), "url": event.data["url"], "description": r["description"]},
+                                "FINDING",
+                                event,
+                            )
+                        elif r["type"] == "VULNERABILITY":
+                            await self.emit_event(
+                                {
+                                    "host": str(event.host),
+                                    "url": event.data["url"],
+                                    "description": r["description"],
+                                    "severity": r["severity"],
+                                },
+                                "VULNERABILITY",
+                                event,
+                            )
 
     async def filter_event(self, event):
         if "in-scope" not in event.tags:
