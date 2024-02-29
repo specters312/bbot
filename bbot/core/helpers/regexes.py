@@ -99,7 +99,7 @@ get_form_regex = re.compile(
     re.DOTALL,
 )
 post_form_regex = re.compile(
-    r"<form[^>]+action=[\"']?([^\s'\"]+)[\"']?[^>]+method=[\"']?[pP][oO][sS][tT][\"']?[^>]*>([\s\S]*?)<\/form>",
+    r"<form[^>]+(?:action=[\"']?([^\s\'\"]+)[\"\']?)?[^>]*method=[\"']?[pP][oO][sS][tT][\"']?[^>]*>([\s\S]*?)<\/form>",
     re.DOTALL,
 )
 select_tag_regex = re.compile(

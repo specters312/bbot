@@ -29,6 +29,7 @@ class BaseLightfuzz:
 class CmdILightFuzz(BaseLightfuzz):
     async def fuzz(self):
 
+        cookies = self.event.data.get("assigned_cookies", {})
         if (
             "original_value" in self.event.data
             and self.event.data["original_value"] is not None
@@ -50,9 +51,9 @@ class CmdILightFuzz(BaseLightfuzz):
             http_compare = self.lightfuzz.helpers.http_compare(baseline_url, include_cache_buster=False, timeout=15)
 
         elif self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: probe_value}
+            cookies_probe = {self.event.data["name"]: probe_value}
             http_compare = self.lightfuzz.helpers.http_compare(
-                baseline_url, include_cache_buster=False, cookies=cookies, timeout=15
+                baseline_url, include_cache_buster=False, cookies={**cookies, **cookies_probe}, timeout=15
             )
         elif self.event.data["type"] == "HEADER":
             headers = {self.event.data["name"]: probe_value}
@@ -63,27 +64,26 @@ class CmdILightFuzz(BaseLightfuzz):
             data = {self.event.data["name"]: probe_value}
             if self.event.data["additional_params"] is not None:
                 data.update(self.event.data["additional_params"])
-            self.lightfuzz.critical(data)
             http_compare = self.lightfuzz.helpers.http_compare(
                 baseline_url, include_cache_buster=False, data=data, method="POST", timeout=15
             )
 
         cmdi_probe_strings = [
-            f";echo",
-            f"&& echo",
-            f"|| echo",
-            f"& echo",
-            f"| echo",
-            f"MMMM echo",
+            ";",
+            "&&",
+            "||",
+            "&",
+            "|",
+            "MMMM",
         ]
 
         positive_detections = []
         for p in cmdi_probe_strings:
-            probe = f"{p} {canary}"
+            probe = f"{p} echo {canary} {p}"
             if self.event.data["type"] == "COOKIE":
-                cookies = {self.event.data["name"]: f"{probe_value}{probe}"}
+                cookies_probe = {self.event.data["name"]: f"{probe_value}{probe}"}
                 probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(probe_url, cookies=cookies, timeout=30)
+                cmdi_probe = await http_compare.compare(probe_url, cookies={**cookies, **cookies_probe}, timeout=30)
             elif self.event.data["type"] == "GETPARAM":
                 encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
                 probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
@@ -103,31 +103,22 @@ class CmdILightFuzz(BaseLightfuzz):
                 break
 
             if cmdi_probe[3]:
-                self.lightfuzz.hugeinfo(cmdi_probe[3].text)
-                if canary in cmdi_probe[3].text:
+                if canary in cmdi_probe[3].text and "echo" not in cmdi_probe[3].text:
                     self.lightfuzz.debug(f"canary [{canary}] found in response when sending probe [{p}]")
                     positive_detections.append(p)
         if len(positive_detections) > 0:
             self.results.append(
                 {
                     "type": "FINDING",
-                    "description": f"POSSIBLE OS Command Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [echo canary] CMD Probe String: [{','.join(positive_detections)}]",
+                    "description": f"POSSIBLE OS Command Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [echo canary] CMD Probe Delimeters: [{' '.join(positive_detections)}]",
                 }
             )
-
-        blind_cmdi_probe_strings = [
-            f";nslookup," f"&& nslookup",
-            f"|| nslookup",
-            f"& nslookup",
-            f"| nslookup",
-            f"MMMM nslookup",
-        ]
 
         # Blind OS Command Injection
         if self.lightfuzz.interactsh_instance:
             self.lightfuzz.event_dict[self.event.data["url"]] = self.event
 
-            for p in blind_cmdi_probe_strings:
+            for p in cmdi_probe_strings:
 
                 subdomain_tag = self.lightfuzz.helpers.rand_string(4, digits=False)
                 self.lightfuzz.interactsh_subdomain_tags[subdomain_tag] = {
@@ -136,13 +127,16 @@ class CmdILightFuzz(BaseLightfuzz):
                     "name": self.event.data["name"],
                     "probe": p,
                 }
-                probe = f"{p} {subdomain_tag}.{self.lightfuzz.interactsh_domain}"
-
+                probe = f"{p} nslookup {subdomain_tag}.{self.lightfuzz.interactsh_domain} {p}"
                 if self.event.data["type"] == "COOKIE":
-                    cookies = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    cookies_probe = {self.event.data["name"]: f"{probe_value}{probe}"}
                     probe_url = self.event.data["url"]
                     await self.lightfuzz.helpers.request(
-                        method="GET", url=probe_url, allow_redirects=False, cookies=cookies, timeout=15
+                        method="GET",
+                        url=probe_url,
+                        allow_redirects=False,
+                        cookies={**cookies, **cookies_probe},
+                        timeout=15,
                     )
                 elif self.event.data["type"] == "GETPARAM":
                     encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
@@ -160,7 +154,6 @@ class CmdILightFuzz(BaseLightfuzz):
                     data = {self.event.data["name"]: f"{probe_value}{probe}"}
                     if self.event.data["additional_params"] is not None:
                         data.update(self.event.data["additional_params"])
-                    self.lightfuzz.critical(data)
                     probe_url = self.event.data["url"]
                     await self.lightfuzz.helpers.request(
                         method="POST", url=probe_url, allow_redirects=False, data=data, timeout=15
@@ -183,6 +176,13 @@ class SQLiLightfuzz(BaseLightfuzz):
             <= mean_baseline + self.expected_delay + margin
         ):
             return True
+        # check for exactly twice the delay, in case the statement gets placed in the query twice
+        elif (
+            mean_baseline + (self.expected_delay * 2) - margin
+            <= measured_delay
+            <= mean_baseline + (self.expected_delay * 2) + margin
+        ):
+            return True
         else:
             return False
 
@@ -198,53 +198,71 @@ class SQLiLightfuzz(BaseLightfuzz):
         else:
             baseline_url = self.event.data["url"]
 
+        cookies = self.event.data.get("assigned_cookies", {})
+
         if self.event.data["type"] == "GETPARAM":
-            http_compare = self.lightfuzz.helpers.http_compare(baseline_url, include_cache_buster=False)
-        elif self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: f"{self.event.data['original_value']}"}
             http_compare = self.lightfuzz.helpers.http_compare(
-                baseline_url, include_cache_buster=False, cookies=cookies
+                baseline_url, cookies=cookies, include_cache_buster=False
+            )
+        elif self.event.data["type"] == "COOKIE":
+            cookies_probe = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            http_compare = self.lightfuzz.helpers.http_compare(
+                baseline_url, include_cache_buster=False, cookies={**cookies, **cookies_probe}
             )
         elif self.event.data["type"] == "HEADER":
             headers = {self.event.data["name"]: f"{self.event.data['original_value']}"}
             http_compare = self.lightfuzz.helpers.http_compare(
-                baseline_url, include_cache_buster=False, headers=headers
+                baseline_url, include_cache_buster=False, headers=headers, cookies=cookies
+            )
+        elif self.event.data["type"] == "POSTPARAM":
+            data = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            if self.event.data["additional_params"] is not None:
+                data.update(self.event.data["additional_params"])
+            http_compare = self.lightfuzz.helpers.http_compare(
+                baseline_url, method="POST", include_cache_buster=False, data=data, cookies=cookies
             )
 
         # Add Single Quote
-
         if self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: f"{probe_value}'"}
+            cookies_probe = {self.event.data["name"]: f"{probe_value}'"}
             single_quote_url = self.event.data["url"]
-            single_quote = await http_compare.compare(single_quote_url, cookies=cookies)
+            single_quote = await http_compare.compare(single_quote_url, cookies={**cookies, **cookies_probe})
         elif self.event.data["type"] == "GETPARAM":
             single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}'"
-            single_quote = await http_compare.compare(single_quote_url)
+            single_quote = await http_compare.compare(single_quote_url, cookies=cookies)
         elif self.event.data["type"] == "HEADER":
             headers = {self.event.data["name"]: f"{probe_value}'"}
             single_quote_url = self.event.data["url"]
-            single_quote = await http_compare.compare(single_quote_url, headers=headers)
-        #   self.lightfuzz.hugeinfo("Single Quote URL")
-        #   self.lightfuzz.hugewarning(single_quote_url)
-        #   self.lightfuzz.critical(single_quote)
+            single_quote = await http_compare.compare(single_quote_url, headers=headers, cookies=cookies)
+        elif self.event.data["type"] == "POSTPARAM":
+            data = {self.event.data["name"]: f"{probe_value}'"}
+            if self.event.data["additional_params"] is not None:
+                data.update(self.event.data["additional_params"])
+            single_quote_url = self.event.data["url"]
+            single_quote = await http_compare.compare(single_quote_url, method="POST", data=data, cookies=cookies)
 
         # Add Two Single Quotes
         if self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: f"{probe_value}''"}
+            cookies_probe = {self.event.data["name"]: f"{probe_value}''"}
             double_single_quote_url = self.event.data["url"]
-            double_single_quote = await http_compare.compare(double_single_quote_url, cookies=cookies)
+            double_single_quote = await http_compare.compare(
+                double_single_quote_url, cookies={**cookies, **cookies_probe}
+            )
         elif self.event.data["type"] == "GETPARAM":
             double_single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}''"
-            double_single_quote = await http_compare.compare(double_single_quote_url)
+            double_single_quote = await http_compare.compare(double_single_quote_url, cookies=cookies)
         elif self.event.data["type"] == "HEADER":
             headers = {self.event.data["name"]: f"{probe_value}''"}
             double_single_quote_url = self.event.data["url"]
-            double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers)
-
-        #  self.lightfuzz.hugeinfo("Double Single Quote URL")
-        #  self.lightfuzz.hugewarning(double_single_quote_url)
-        #  self.lightfuzz.critical(double_single_quote)
-        # send error probe
+            double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers, cookies=cookies)
+        elif self.event.data["type"] == "POSTPARAM":
+            data = {self.event.data["name"]: f"{probe_value}''"}
+            if self.event.data["additional_params"] is not None:
+                data.update(self.event.data["additional_params"])
+            double_single_quote_url = self.event.data["url"]
+            double_single_quote = await http_compare.compare(
+                double_single_quote_url, method="POST", data=data, cookies=cookies
+            )
 
         if "code" in single_quote[1] and "code" not in double_single_quote[1]:
             self.results.append(
@@ -254,19 +272,19 @@ class SQLiLightfuzz(BaseLightfuzz):
                 }
             )
 
-        self.lightfuzz.hugeinfo("STARTING TIME DELAY PROBE")
-
         delay_probe_strings = [
-            f"'||pg_sleep({str(self.expected_delay)})--",
-            f"1' AND (SLEEP({str(self.expected_delay)})) AND '",
+            f"'||pg_sleep({str(self.expected_delay)})--",  # postgres
+            f"1' AND (SLEEP({str(self.expected_delay)})) AND '",  # mysql
+            f"' AND (SELECT FROM DBMS_LOCK.SLEEP({str(self.expected_delay)})) AND '1'='1"  # oracle (not tested)
+            f"; WAITFOR DELAY '00:00:{str(self.expected_delay)}'--",  # mssql (not tested)
         ]
         method = "GET"
 
         if self.event.data["type"] == "COOKIE":
-            cookies = {self.event.data["name"]: probe_value}
+            cookies_probe = {self.event.data["name"]: probe_value}
             baseline_1 = await self.lightfuzz.helpers.request(
                 method=method,
-                cookies=cookies,
+                cookies={**cookies, **cookies_probe},
                 url=f"{self.event.data['url']}",
                 allow_redirects=False,
                 retries=0,
@@ -274,7 +292,7 @@ class SQLiLightfuzz(BaseLightfuzz):
             )
             baseline_2 = await self.lightfuzz.helpers.request(
                 method=method,
-                cookies=cookies,
+                cookies={**cookies, **cookies_probe},
                 url=f"{self.event.data['url']}",
                 allow_redirects=False,
                 retries=0,
@@ -283,6 +301,7 @@ class SQLiLightfuzz(BaseLightfuzz):
         elif self.event.data["type"] == "GETPARAM":
             baseline_1 = await self.lightfuzz.helpers.request(
                 method=method,
+                cookies=cookies,
                 url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}",
                 allow_redirects=False,
                 retries=0,
@@ -290,6 +309,7 @@ class SQLiLightfuzz(BaseLightfuzz):
             )
             baseline_2 = await self.lightfuzz.helpers.request(
                 method=method,
+                cookies=cookies,
                 url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}",
                 allow_redirects=False,
                 retries=0,
@@ -299,6 +319,7 @@ class SQLiLightfuzz(BaseLightfuzz):
             headers = {self.event.data["name"]: probe_value}
             baseline_1 = await self.lightfuzz.helpers.request(
                 method=method,
+                cookies=cookies,
                 headers=headers,
                 url=f"{self.event.data['url']}",
                 allow_redirects=False,
@@ -307,7 +328,31 @@ class SQLiLightfuzz(BaseLightfuzz):
             )
             baseline_2 = await self.lightfuzz.helpers.request(
                 method=method,
+                cookies=cookies,
                 headers=headers,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+
+        elif self.event.data["type"] == "POSTPARAM":
+            data = {self.event.data["name"]: probe_value}
+            if self.event.data["additional_params"] is not None:
+                data.update(self.event.data["additional_params"])
+            baseline_1 = await self.lightfuzz.helpers.request(
+                method="POST",
+                data=data,
+                cookies=cookies,
+                url=f"{self.event.data['url']}",
+                allow_redirects=False,
+                retries=0,
+                timeout=10,
+            )
+            baseline_2 = await self.lightfuzz.helpers.request(
+                method="POST",
+                data=data,
+                cookies=cookies,
                 url=f"{self.event.data['url']}",
                 allow_redirects=False,
                 retries=0,
@@ -318,15 +363,13 @@ class SQLiLightfuzz(BaseLightfuzz):
             baseline_1_delay = baseline_1.elapsed.total_seconds()
             baseline_2_delay = baseline_2.elapsed.total_seconds()
             mean_baseline = statistics.mean([baseline_1_delay, baseline_2_delay])
-            self.lightfuzz.hugeinfo(mean_baseline)
 
             for p in delay_probe_strings:
-                self.lightfuzz.hugeinfo(p)
                 if self.event.data["type"] == "COOKIE":
-                    cookies = {self.event.data["name"]: f"{probe_value}{p}"}
+                    cookies_probe = {self.event.data["name"]: f"{probe_value}{p}"}
                     r = await self.lightfuzz.helpers.request(
                         method=method,
-                        cookies=cookies,
+                        cookies={**cookies, **cookies_probe},
                         url=f"{self.event.data['url']}",
                         allow_redirects=False,
                         retries=0,
@@ -335,6 +378,7 @@ class SQLiLightfuzz(BaseLightfuzz):
                 elif self.event.data["type"] == "GETPARAM":
                     r = await self.lightfuzz.helpers.request(
                         method=method,
+                        cookies=cookies,
                         url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}",
                         allow_redirects=False,
                         retries=0,
@@ -346,6 +390,21 @@ class SQLiLightfuzz(BaseLightfuzz):
                     r = await self.lightfuzz.helpers.request(
                         method=method,
                         headers=headers,
+                        cookies=cookies,
+                        url=f"{self.event.data['url']}",
+                        allow_redirects=False,
+                        retries=0,
+                        timeout=60,
+                    )
+
+                elif self.event.data["type"] == "POSTPARAM":
+                    data = {self.event.data["name"]: f"{probe_value}{p}"}
+                    if self.event.data["additional_params"] is not None:
+                        data.update(self.event.data["additional_params"])
+                    r = await self.lightfuzz.helpers.request(
+                        method="POST",
+                        data=data,
+                        cookies=cookies,
                         url=f"{self.event.data['url']}",
                         allow_redirects=False,
                         retries=0,
@@ -353,11 +412,10 @@ class SQLiLightfuzz(BaseLightfuzz):
                     )
 
                 if not r:
-                    self.lightfuzz.critical("delay measure request failed")
+                    self.lightfuzz.debug("delay measure request failed")
                     continue
                 d = r.elapsed.total_seconds()
-                self.lightfuzz.critical("MEASURED DELAY")
-                self.lightfuzz.critical(d)
+                self.lightfuzz.debug(f"measured delay: {str(d)}")
                 if self.evaluate_delay(mean_baseline, d):
                     self.results.append(
                         {
@@ -366,7 +424,7 @@ class SQLiLightfuzz(BaseLightfuzz):
                         }
                     )
                 else:
-                    self.lightfuzz.hugeinfo("DELAY NOT FOUND")
+                    self.lightfuzz.debug("Error obtaining delay")
         else:
             self.lightfuzz.debug("Could not get baseline for time-delay tests")
 
@@ -425,7 +483,7 @@ class XSSLightfuzz(BaseLightfuzz):
         )
 
         if between_tags:
-            between_tags_probe = f"<b>{random_string}</b>"
+            between_tags_probe = f"<z>{random_string}</z>"
             probe_result = await self.send_probe(between_tags_probe)
             if probe_result:
                 if between_tags_probe in probe_result:
@@ -466,7 +524,7 @@ class lightfuzz(BaseModule):
     watched_events = ["URL", "HTTP_RESPONSE", "WEB_PARAMETER"]
     produced_events = ["FINDING", "VULNERABILITY"]
     flags = ["active", "web-thorough"]
-    options = {"force_common_headers": False, "submodule_sqli": False, "submodule_xss": False, "submodule_cmdi": True}
+    options = {"force_common_headers": False, "submodule_sqli": True, "submodule_xss": True, "submodule_cmdi": True}
     options_desc = {
         "force_common_headers": "Force emit commonly exploitable parameters that may be difficult to detect",
         "submodule_sqli": "Enable the SQL Injection Submodule",
@@ -489,15 +547,15 @@ class lightfuzz(BaseModule):
 
         if self.config.get("submodule_sqli", False) == True:
             self.submodule_sqli = True
-            self.critical("SQL Injection Submodule Enabled")
+            self.hugeinfo("Lightfuzz SQL Injection Submodule Enabled")
 
         if self.config.get("submodule_xss", False) == True:
             self.submodule_xss = True
-            self.critical("XSS Submodule Enabled")
+            self.hugeinfo("Lightfuzz XSS Submodule Enabled")
 
         if self.config.get("submodule_cmdi", False) == True:
             self.submodule_cmdi = True
-            self.critical("Command Injection Submodule Enabled")
+            self.hugeinfo("Lightfuzz Command Injection Submodule Enabled")
 
             if self.scan.config.get("interactsh_disable", False) == False:
 
@@ -561,12 +619,16 @@ class lightfuzz(BaseModule):
                 await self.emit_event(data, "WEB_PARAMETER", event)
 
         if event.type == "HTTP_RESPONSE":
+            assigned_cookies = {}
+
             headers = event.data.get("header", "")
             for k, v in headers.items():
                 if k == "set_cookie":
+
                     if "=" not in v:
                         self.critical(f"DEBUG FOR COOKIE WITHOUT =: {v}")
                     else:
+
                         in_bl = False
                         for bl_param in self.parameter_blacklist:
                             if bl_param.lower() == k.lower():
@@ -576,6 +638,9 @@ class lightfuzz(BaseModule):
                         if in_bl == False:
                             cookie_name = v.split("=")[0]
                             cookie_value = v.split("=")[1].split(";")[0]
+
+                            assigned_cookies[cookie_name] = cookie_value
+
                             description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
                             data = {
                                 "host": str(event.host),
@@ -629,6 +694,7 @@ class lightfuzz(BaseModule):
                         "url": url,
                         "description": description,
                         "additional_params": additional_params,
+                        "assigned_cookies": assigned_cookies,
                         "regex_name": regex_name,
                     }
                     await self.emit_event(data, "WEB_PARAMETER", event)
@@ -637,7 +703,7 @@ class lightfuzz(BaseModule):
 
             if self.submodule_xss:
                 if event.data["type"] == "GETPARAM":
-                    self.hugeinfo("STARTING XSS FUZZ")
+                    self.debug("STARTING XSS FUZZ")
                     xsslf = XSSLightfuzz(self, event)
                     await xsslf.fuzz()
                     if len(xsslf.results) > 0:
@@ -649,7 +715,7 @@ class lightfuzz(BaseModule):
                             )
 
             if self.submodule_sqli:
-                self.hugeinfo("STARTING SQLI FUZZ")
+                self.debug("STARTING SQLI FUZZ")
                 sqlilf = SQLiLightfuzz(self, event)
                 await sqlilf.fuzz()
                 if len(sqlilf.results) > 0:
@@ -662,7 +728,7 @@ class lightfuzz(BaseModule):
 
             if self.submodule_cmdi:
 
-                self.hugeinfo("Starting CMDI FUZZ")
+                self.debug("Starting CMDI FUZZ")
 
                 cmdilf = CmdILightFuzz(self, event)
                 await cmdilf.fuzz()

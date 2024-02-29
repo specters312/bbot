@@ -1011,16 +1011,23 @@ def extract_params_html(html_data):
         return {key: value for key, value in original_dict.items() if key != key_to_exclude}
 
     # Check "get forms" for input tags
+
+    all_form_parameters = []
+
     get_form = bbot_regexes.get_form_regex.findall(html_data)
     for i in get_form:
         form_action = i[0]
         input_tag = bbot_regexes.input_tag_regex.findall(i[1])
         for i in input_tag:
             parameter = i[0]
+            all_form_parameters.append(parameter)
             if len(i) > 1:
                 original_value = i[1]
             else:
-                original_value = None
+                original_value = "1"
+
+            if original_value == "":
+                original_value = "1"
             log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
             yield "GET", form_action, parameter, original_value, "get_form", None
 
@@ -1035,17 +1042,24 @@ def extract_params_html(html_data):
             if len(i) > 1:
                 original_value = i[1]
             else:
-                original_value = None
+                original_value = "1"
+
+            if original_value == "":
+                original_value = "1"
 
             form_params[parameter] = original_value
             log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
         select_tags = bbot_regexes.select_tag_regex.findall(f[1])
         for i in select_tags:
             parameter = i[0]
+            all_form_parameters.append(parameter)
             if len(i) > 1:
                 original_value = i[1]
             else:
-                original_value = None
+                original_value = "1"
+
+            if original_value == "":
+                original_value = "1"
 
             form_params[parameter] = original_value
 
@@ -1056,12 +1070,17 @@ def extract_params_html(html_data):
     input_tag = bbot_regexes.input_tag_regex.findall(html_data)
     for i in input_tag:
         parameter = i[0]
-        if len(i) > 1:
-            original_value = i[1]
-        else:
-            original_value = None
-        log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-        yield None, None, parameter, original_value, "input_tag", None
+        # if we found them in a form already, dont repeat them
+        if parameter not in all_form_parameters:
+            if len(i) > 1:
+                original_value = i[1]
+            else:
+                original_value = "1"
+
+            if original_value == "":
+                original_value = "1"
+            log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
+            yield None, None, parameter, original_value, "input_tag", None
 
     # check for jquery get parameters
     jquery_get = bbot_regexes.jquery_get_regex.findall(html_data)
@@ -1085,6 +1104,8 @@ def extract_params_html(html_data):
         href = s[0]
         parameter = s[1]
         original_value = s[2]
+        if original_value == None or original_value == "":
+            original_value = "1"
         yield "GET", href, parameter, original_value, "a_tag", None
 
 
