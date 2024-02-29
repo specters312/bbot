@@ -986,8 +986,8 @@ def extract_params_html(html_data):
         html_data (str): HTML-formatted string.
 
     Yields:
-    endpoint, parameter_name, original_value, regex_name
-        method(str), endpoint(str), parameter_name(str), original_value(str), regex_name(str): The HTTP method associated with the parameter (GET, POST, None), A string containing (optionally) the endpoint associated with the parameter, the parameter found in HTML object, its original value (if available), and the name of the detecting regex.
+    endpoint, parameter_name, original_value, regex_name, additional_params
+        method(str), endpoint(str), parameter_name(str), original_value(str), regex_name(str), additional_params(dict): The HTTP method associated with the parameter (GET, POST, None), A string containing (optionally) the endpoint associated with the parameter, the parameter found in HTML object, its original value (if available), the name of the detecting regex, a dict of additional params if any
 
     Examples:
         >>> html_data = '''
@@ -1006,12 +1006,14 @@ def extract_params_html(html_data):
         [('/test','user'), ('/test','param2'_, ('/test','param3')]
     """
 
+    def exclude_key(original_dict, key_to_exclude):
+        # Create a new dictionary that excludes the specified key
+        return {key: value for key, value in original_dict.items() if key != key_to_exclude}
+
     # Check "get forms" for input tags
     get_form = bbot_regexes.get_form_regex.findall(html_data)
-    # log.critical(get_form)
     for i in get_form:
         form_action = i[0]
-        log.hugewarning(i[1])
         input_tag = bbot_regexes.input_tag_regex.findall(i[1])
         for i in input_tag:
             parameter = i[0]
@@ -1020,24 +1022,35 @@ def extract_params_html(html_data):
             else:
                 original_value = None
             log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-            yield "GET", form_action, parameter, original_value, "get_form"
+            yield "GET", form_action, parameter, original_value, "get_form", None
 
     # Parse "post forms" for input tags
-    post_form = bbot_regexes.get_form_regex.findall(html_data)
-    log.critical("PARSING POST FORM")
-    for i in post_form:
-        form_action = i[0]
-        log.hugewarning(i[1])
-        input_tag = bbot_regexes.input_tag_regex.findall(i[1])
-        for i in input_tag:
-            log.hugewarning(i)
+    post_form = bbot_regexes.post_form_regex.findall(html_data)
+    for f in post_form:
+        form_params = {}
+        form_action = f[0]
+        input_tags = bbot_regexes.input_tag_regex.findall(f[1])
+        for i in input_tags:
             parameter = i[0]
             if len(i) > 1:
                 original_value = i[1]
             else:
                 original_value = None
+
+            form_params[parameter] = original_value
             log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-            yield "POST", form_action, parameter, original_value, "get_form"
+        select_tags = bbot_regexes.select_tag_regex.findall(f[1])
+        for i in select_tags:
+            parameter = i[0]
+            if len(i) > 1:
+                original_value = i[1]
+            else:
+                original_value = None
+
+            form_params[parameter] = original_value
+
+        for parameter, original_value in form_params.items():
+            yield "POST", form_action, parameter, original_value, "post_form", exclude_key(form_params, parameter)
 
     # Also Look for input tags everywhere, even if not in a form
     input_tag = bbot_regexes.input_tag_regex.findall(html_data)
@@ -1048,14 +1061,14 @@ def extract_params_html(html_data):
         else:
             original_value = None
         log.debug(f"FOUND PARAM ({i}) IN INPUT TAGS")
-        yield None, None, parameter, original_value, "input_tag"
+        yield None, None, parameter, original_value, "input_tag", None
 
     # check for jquery get parameters
     jquery_get = bbot_regexes.jquery_get_regex.findall(html_data)
 
     for i in jquery_get:
         log.debug(f"FOUND PARAM ({i}) IN JQUERY GET PARAMS")
-        yield "GET", None, i, None, "jquery_get"
+        yield "GET", None, i, None, "jquery_get", None
 
     # check for jquery post parameters
     jquery_post = bbot_regexes.jquery_post_regex.findall(html_data)
@@ -1064,7 +1077,7 @@ def extract_params_html(html_data):
             for x in i.split(","):
                 s = x.split(":")[0].strip().replace('"', "")
                 log.debug(f"FOUND PARAM ({s}) IN A JQUERY POST PARAMS")
-                yield "POST", None, s, None, "jquery_post"
+                yield "POST", None, s, None, "jquery_post", None
 
     a_tag = bbot_regexes.a_tag_regex.findall(html_data)
     for s in a_tag:
@@ -1072,7 +1085,7 @@ def extract_params_html(html_data):
         href = s[0]
         parameter = s[1]
         original_value = s[2]
-        yield "GET", href, parameter, original_value, "a_tag"
+        yield "GET", href, parameter, original_value, "a_tag", None
 
 
 def extract_words(data, acronyms=True, wordninja=True, model=None, max_length=100, word_regexes=None):

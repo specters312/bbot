@@ -14,6 +14,7 @@ class HttpCompare:
         baseline_url,
         parent_helper,
         method="GET",
+        data=None,
         allow_redirects=False,
         include_cache_buster=True,
         headers=None,
@@ -24,6 +25,7 @@ class HttpCompare:
         self.baseline_url = baseline_url
         self.include_cache_buster = include_cache_buster
         self.method = method
+        self.data = data
         self.allow_redirects = allow_redirects
         self._baselined = False
         self.headers = headers
@@ -50,6 +52,7 @@ class HttpCompare:
                 url_1,
                 follow_redirects=self.allow_redirects,
                 method=self.method,
+                data=self.data,
                 headers=self.headers,
                 cookies=self.cookies,
                 retries=2,
@@ -72,6 +75,7 @@ class HttpCompare:
                 ),
                 follow_redirects=self.allow_redirects,
                 method=self.method,
+                data=self.data,
                 retries=2,
                 timeout=self.timeout,
             )
@@ -164,6 +168,7 @@ class HttpCompare:
         cookies=None,
         check_reflection=False,
         method="GET",
+        data=None,
         allow_redirects=False,
         timeout=None,
     ):
@@ -188,7 +193,13 @@ class HttpCompare:
         else:
             url = subject
         subject_response = await self.parent_helper.request(
-            url, headers=headers, cookies=cookies, follow_redirects=allow_redirects, method=method, timeout=timeout
+            url,
+            headers=headers,
+            cookies=cookies,
+            follow_redirects=allow_redirects,
+            method=method,
+            data=data,
+            timeout=timeout,
         )
 
         if subject_response is None:

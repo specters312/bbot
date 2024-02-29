@@ -95,7 +95,15 @@ jquery_get_regex = re.compile(r"url:\s?[\"\'].+?\?(\w+)=")
 jquery_post_regex = re.compile(r"\$.post\([\'\"].+[\'\"].+\{(.+)\}")
 a_tag_regex = re.compile(r"<a[^>]*href=[\"\']([^\"\'?>]*)\?([^&\"\'=]+)=([^&\"\'=]+)")
 get_form_regex = re.compile(
-    r"<form[^>]+action=[\"']?([^\s'\"]+)[\"']?[^>]+method=[\"']?[gG][eE][tT][\"']?[^>]*>([\s\S]*?)<\/form>", re.DOTALL
+    r"<form[^>]+(?:action=[\"']?([^\s\'\"]+)[\"\']?)?[^>]*method=[\"']?[gG][eE][tT][\"']?[^>]*>([\s\S]*?)<\/form>",
+    re.DOTALL,
+)
+post_form_regex = re.compile(
+    r"<form[^>]+action=[\"']?([^\s'\"]+)[\"']?[^>]+method=[\"']?[pP][oO][sS][tT][\"']?[^>]*>([\s\S]*?)<\/form>",
+    re.DOTALL,
+)
+select_tag_regex = re.compile(
+    r"<select[^>]+?name=[\"\']?(\w+)[\"\']?[^>]*>(?:\s*<option[^>]*?value=[\"\'](\w*)[\"\']?[^>]*>)?"
 )
 
 

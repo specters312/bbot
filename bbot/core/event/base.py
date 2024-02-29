@@ -887,6 +887,8 @@ class URL_UNVERIFIED(BaseEvent):
         self.num_redirects = getattr(self.source, "num_redirects", 0)
 
     def sanitize_data(self, data):
+
+        scan = getattr(self, "scan", None)
         self.parsed = validators.validate_url_parsed(data)
 
         # tag as dir or endpoint
@@ -897,7 +899,6 @@ class URL_UNVERIFIED(BaseEvent):
 
         parsed_path_lower = str(self.parsed.path).lower()
 
-        scan = getattr(self, "scan", None)
         url_extension_blacklist = getattr(scan, "url_extension_blacklist", [])
         url_extension_httpx_only = getattr(scan, "url_extension_httpx_only", [])
 
@@ -931,6 +932,11 @@ class URL_UNVERIFIED(BaseEvent):
         data = super()._data_id()
         if "spider-danger" in self.tags:
             data = "spider-danger" + data
+
+        if self.scan.config.get("url_remove_querystring", True) == False and self.parsed.query:
+            # remove the values from the query string
+            cleaned_query = "|".join(sorted([p.split("=")[0] for p in self.parsed.query.split("&")]))
+            data = f"{self.parsed.scheme}|{self.parsed.netloc}|{self.parsed.path}|{cleaned_query}"
         return data
 
     @property

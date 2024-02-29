@@ -102,7 +102,7 @@ class speculate(BaseInternalModule):
                 )
 
         # generate sub-directory URLS from URLS
-        if event.type == "URL":
+        if event.type == "URL" and "endpoint" not in event.tags:
             url_parents = self.helpers.url_parents(event.data)
             for up in url_parents:
                 url_event = self.make_event(f"{up}/", "URL_UNVERIFIED", source=event)

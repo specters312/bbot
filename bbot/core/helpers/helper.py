@@ -81,7 +81,15 @@ class ConfigAwareHelper:
         return Interactsh(self, *args, **kwargs)
 
     def http_compare(
-        self, url, allow_redirects=False, include_cache_buster=True, headers=None, cookies=None, timeout=15
+        self,
+        url,
+        allow_redirects=False,
+        include_cache_buster=True,
+        headers=None,
+        cookies=None,
+        method="GET",
+        data=None,
+        timeout=15,
     ):
         return HttpCompare(
             url,
@@ -91,6 +99,8 @@ class ConfigAwareHelper:
             headers=headers,
             cookies=cookies,
             timeout=timeout,
+            method=method,
+            data=data,
         )
 
     def temp_filename(self, extension=None):
