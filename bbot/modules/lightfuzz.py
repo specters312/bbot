@@ -379,66 +379,81 @@ class SQLiLightfuzz(BaseLightfuzz):
             mean_baseline = statistics.mean([baseline_1_delay, baseline_2_delay])
 
             for p in delay_probe_strings:
-                if self.event.data["type"] == "COOKIE":
-                    cookies_probe = {self.event.data["name"]: f"{probe_value}{p}"}
-                    r = await self.lightfuzz.helpers.request(
-                        method=method,
-                        cookies={**cookies, **cookies_probe},
-                        url=f"{self.event.data['url']}",
-                        allow_redirects=False,
-                        retries=0,
-                        timeout=60,
-                    )
-                elif self.event.data["type"] == "GETPARAM":
-                    r = await self.lightfuzz.helpers.request(
-                        method=method,
-                        cookies=cookies,
-                        url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}",
-                        allow_redirects=False,
-                        retries=0,
-                        timeout=60,
-                    )
 
-                elif self.event.data["type"] == "HEADER":
-                    headers = {self.event.data["name"]: f"{probe_value}{p}"}
-                    r = await self.lightfuzz.helpers.request(
-                        method=method,
-                        headers=headers,
-                        cookies=cookies,
-                        url=f"{self.event.data['url']}",
-                        allow_redirects=False,
-                        retries=0,
-                        timeout=60,
-                    )
+                confirmations = 0
+                for i in range(0, 3):
+                    if self.event.data["type"] == "COOKIE":
+                        cookies_probe = {self.event.data["name"]: f"{probe_value}{p}"}
+                        r = await self.lightfuzz.helpers.request(
+                            method=method,
+                            cookies={**cookies, **cookies_probe},
+                            url=f"{self.event.data['url']}",
+                            allow_redirects=False,
+                            retries=0,
+                            timeout=60,
+                        )
+                    elif self.event.data["type"] == "GETPARAM":
+                        r = await self.lightfuzz.helpers.request(
+                            method=method,
+                            cookies=cookies,
+                            url=f"{self.event.data['url']}?{self.event.data['name']}={probe_value}{p}",
+                            allow_redirects=False,
+                            retries=0,
+                            timeout=60,
+                        )
 
-                elif self.event.data["type"] == "POSTPARAM":
-                    data = {self.event.data["name"]: f"{probe_value}{p}"}
-                    if self.event.data["additional_params"] is not None:
-                        data.update(self.event.data["additional_params"])
-                    r = await self.lightfuzz.helpers.request(
-                        method="POST",
-                        data=data,
-                        cookies=cookies,
-                        url=f"{self.event.data['url']}",
-                        allow_redirects=False,
-                        retries=0,
-                        timeout=60,
-                    )
+                    elif self.event.data["type"] == "HEADER":
+                        headers = {self.event.data["name"]: f"{probe_value}{p}"}
+                        r = await self.lightfuzz.helpers.request(
+                            method=method,
+                            headers=headers,
+                            cookies=cookies,
+                            url=f"{self.event.data['url']}",
+                            allow_redirects=False,
+                            retries=0,
+                            timeout=60,
+                        )
 
-                if not r:
-                    self.lightfuzz.debug("delay measure request failed")
-                    continue
-                d = r.elapsed.total_seconds()
-                self.lightfuzz.debug(f"measured delay: {str(d)}")
-                if self.evaluate_delay(mean_baseline, d):
+                    elif self.event.data["type"] == "POSTPARAM":
+                        data = {self.event.data["name"]: f"{probe_value}{p}"}
+                        if self.event.data["additional_params"] is not None:
+                            data.update(self.event.data["additional_params"])
+                        r = await self.lightfuzz.helpers.request(
+                            method="POST",
+                            data=data,
+                            cookies=cookies,
+                            url=f"{self.event.data['url']}",
+                            allow_redirects=False,
+                            retries=0,
+                            timeout=60,
+                        )
+
+                    else:
+                        self.lightfuzz.debug(f'Invalid param type provided [{self.event.data["type"]}]')
+                        break
+
+                    if not r:
+                        self.lightfuzz.debug("delay measure request failed")
+                        break
+
+                    d = r.elapsed.total_seconds()
+                    self.lightfuzz.debug(f"measured delay: {str(d)}")
+                    if self.evaluate_delay(mean_baseline, d):
+                        confirmations += 1
+                        self.lightfuzz.debug(
+                            f"{baseline_url}:{self.event.data['name']}:{self.event.data['type']} Increasing confirmations, now: {str(confirmations)} "
+                        )
+                    else:
+                        break
+
+                if confirmations == 3:
                     self.results.append(
                         {
                             "type": "FINDING",
                             "description": f"Possible Blind SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Delay Probe ({p})]",
                         }
                     )
-                else:
-                    self.lightfuzz.debug("Error obtaining delay")
+
         else:
             self.lightfuzz.debug("Could not get baseline for time-delay tests")
 

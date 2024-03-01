@@ -936,7 +936,7 @@ class URL_UNVERIFIED(BaseEvent):
         if self.scan.config.get("url_remove_querystring", True) == False and self.parsed.query:
             # remove the values from the query string
             cleaned_query = "|".join(sorted([p.split("=")[0] for p in self.parsed.query.split("&")]))
-            data = f"{self.parsed.scheme}|{self.parsed.netloc}|{self.parsed.path}|{cleaned_query}"
+            data = f"{self.parsed.scheme}:{self.parsed.netloc}:{self.parsed.path}:{cleaned_query}"
         return data
 
     @property
@@ -982,6 +982,22 @@ class URL_HINT(URL_UNVERIFIED):
 
 
 class WEB_PARAMETER(DictHostEvent):
+
+    def _data_id(self):
+
+        # dedupe by url:name:param_type
+        url = self.data.get("url", "")
+        name = self.data.get("name", "")
+        param_type = self.data.get("type", "")
+        if self.scan.config.get("url_remove_querystring", True) == False:
+            from urllib.parse import urlparse
+
+            parsed_url = urlparse(url)
+            # remove the values from the query string
+            cleaned_query = "|".join(sorted([p.split("=")[0] for p in parsed_url.query.split("&")]))
+            url = f"{parsed_url.scheme}:{parsed_url.netloc}:{parsed_url.path}:{cleaned_query}"
+        return f"{url}:{name}:{param_type}"
+
     def _url(self):
         return self.data["url"]
 
