@@ -84,7 +84,9 @@ class CmdILightFuzz(BaseLightfuzz):
                 if self.event.data["type"] == "COOKIE":
                     cookies_probe = {self.event.data["name"]: f"{probe_value}{probe}"}
                     probe_url = self.event.data["url"]
-                    cmdi_probe = await http_compare.compare(probe_url, cookies={**cookies, **cookies_probe}, timeout=30)
+                    cmdi_probe = await http_compare.compare(
+                        probe_url, cookies={**cookies, **cookies_probe}, timeout=30
+                    )
                 elif self.event.data["type"] == "GETPARAM":
                     encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
                     probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
@@ -100,7 +102,9 @@ class CmdILightFuzz(BaseLightfuzz):
                     probe_url = self.event.data["url"]
                     cmdi_probe = await http_compare.compare(probe_url, timeout=30, method="POST", data=data)
                 else:
-                    self.lightfuzz.debug(f'Got unexpected value for self.event.data["type"]: [{self.event.data["type"]}]')
+                    self.lightfuzz.debug(
+                        f'Got unexpected value for self.event.data["type"]: [{self.event.data["type"]}]'
+                    )
                     break
 
                 if cmdi_probe[3]:
@@ -110,7 +114,6 @@ class CmdILightFuzz(BaseLightfuzz):
             except HttpCompareError as e:
                 self.lightfuzz.debug(e)
                 continue
-
 
         if len(positive_detections) > 0:
             self.results.append(
@@ -228,7 +231,6 @@ class SQLiLightfuzz(BaseLightfuzz):
                 baseline_url, method="POST", include_cache_buster=False, data=data, cookies=cookies
             )
 
-
         try:
             # Add Single Quote
             if self.event.data["type"] == "COOKIE":
@@ -262,7 +264,9 @@ class SQLiLightfuzz(BaseLightfuzz):
             elif self.event.data["type"] == "HEADER":
                 headers = {self.event.data["name"]: f"{probe_value}''"}
                 double_single_quote_url = self.event.data["url"]
-                double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers, cookies=cookies)
+                double_single_quote = await http_compare.compare(
+                    double_single_quote_url, headers=headers, cookies=cookies
+                )
             elif self.event.data["type"] == "POSTPARAM":
                 data = {self.event.data["name"]: f"{probe_value}''"}
                 if self.event.data["additional_params"] is not None:
@@ -281,7 +285,6 @@ class SQLiLightfuzz(BaseLightfuzz):
                 )
         except HttpCompareError as e:
             self.lightfuzz.debug(e)
-     
 
         delay_probe_strings = [
             f"'||pg_sleep({str(self.expected_delay)})--",  # postgres
@@ -553,9 +556,12 @@ class lightfuzz(BaseModule):
         "__VIEWSTATEGENERATOR",
         "__SCROLLPOSITIONY",
         "__SCROLLPOSITIONX",
+        "ASP.NET_SessionId",
         "JSESSIONID",
     ]
     in_scope_only = True
+
+    max_event_handlers = 2
 
     async def setup(self):
         self.event_dict = {}
