@@ -159,7 +159,7 @@ class CmdILightFuzz(BaseLightfuzz):
                         method="POST", url=probe_url, allow_redirects=False, data=data, timeout=15
                     )
         else:
-            self.debug(
+            self.lightfuzz.debug(
                 "Aborting Blind Command Injection check due to interactsh global disable or interactsh setup failure"
             )
             return None
