@@ -533,7 +533,17 @@ class lightfuzz(BaseModule):
     }
     meta = {"description": "Find Web Parameters and Lightly Fuzz them using a heuristic based scanner"}
     common_headers = ["x-forwarded-for", "user-agent"]
-    parameter_blacklist = ["__VIEWSTATE", "__EVENTARGUMENT", "JSESSIONID"]
+    parameter_blacklist = [
+        "__VIEWSTATE",
+        "__EVENTARGUMENT",
+        "__EVENTVALIDATION",
+        "__EVENTTARGET",
+        "__EVENTARGUMENT",
+        "__VIEWSTATEGENERATOR",
+        "__SCROLLPOSITIONY",
+        "__SCROLLPOSITIONX",
+        "JSESSIONID",
+    ]
     in_scope_only = True
 
     async def setup(self):
