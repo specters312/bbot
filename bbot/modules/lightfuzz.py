@@ -228,55 +228,60 @@ class SQLiLightfuzz(BaseLightfuzz):
                 baseline_url, method="POST", include_cache_buster=False, data=data, cookies=cookies
             )
 
-        # Add Single Quote
-        if self.event.data["type"] == "COOKIE":
-            cookies_probe = {self.event.data["name"]: f"{probe_value}'"}
-            single_quote_url = self.event.data["url"]
-            single_quote = await http_compare.compare(single_quote_url, cookies={**cookies, **cookies_probe})
-        elif self.event.data["type"] == "GETPARAM":
-            single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}'"
-            single_quote = await http_compare.compare(single_quote_url, cookies=cookies)
-        elif self.event.data["type"] == "HEADER":
-            headers = {self.event.data["name"]: f"{probe_value}'"}
-            single_quote_url = self.event.data["url"]
-            single_quote = await http_compare.compare(single_quote_url, headers=headers, cookies=cookies)
-        elif self.event.data["type"] == "POSTPARAM":
-            data = {self.event.data["name"]: f"{probe_value}'"}
-            if self.event.data["additional_params"] is not None:
-                data.update(self.event.data["additional_params"])
-            single_quote_url = self.event.data["url"]
-            single_quote = await http_compare.compare(single_quote_url, method="POST", data=data, cookies=cookies)
 
-        # Add Two Single Quotes
-        if self.event.data["type"] == "COOKIE":
-            cookies_probe = {self.event.data["name"]: f"{probe_value}''"}
-            double_single_quote_url = self.event.data["url"]
-            double_single_quote = await http_compare.compare(
-                double_single_quote_url, cookies={**cookies, **cookies_probe}
-            )
-        elif self.event.data["type"] == "GETPARAM":
-            double_single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}''"
-            double_single_quote = await http_compare.compare(double_single_quote_url, cookies=cookies)
-        elif self.event.data["type"] == "HEADER":
-            headers = {self.event.data["name"]: f"{probe_value}''"}
-            double_single_quote_url = self.event.data["url"]
-            double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers, cookies=cookies)
-        elif self.event.data["type"] == "POSTPARAM":
-            data = {self.event.data["name"]: f"{probe_value}''"}
-            if self.event.data["additional_params"] is not None:
-                data.update(self.event.data["additional_params"])
-            double_single_quote_url = self.event.data["url"]
-            double_single_quote = await http_compare.compare(
-                double_single_quote_url, method="POST", data=data, cookies=cookies
-            )
+        try:
+            # Add Single Quote
+            if self.event.data["type"] == "COOKIE":
+                cookies_probe = {self.event.data["name"]: f"{probe_value}'"}
+                single_quote_url = self.event.data["url"]
+                single_quote = await http_compare.compare(single_quote_url, cookies={**cookies, **cookies_probe})
+            elif self.event.data["type"] == "GETPARAM":
+                single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}'"
+                single_quote = await http_compare.compare(single_quote_url, cookies=cookies)
+            elif self.event.data["type"] == "HEADER":
+                headers = {self.event.data["name"]: f"{probe_value}'"}
+                single_quote_url = self.event.data["url"]
+                single_quote = await http_compare.compare(single_quote_url, headers=headers, cookies=cookies)
+            elif self.event.data["type"] == "POSTPARAM":
+                data = {self.event.data["name"]: f"{probe_value}'"}
+                if self.event.data["additional_params"] is not None:
+                    data.update(self.event.data["additional_params"])
+                single_quote_url = self.event.data["url"]
+                single_quote = await http_compare.compare(single_quote_url, method="POST", data=data, cookies=cookies)
 
-        if "code" in single_quote[1] and "code" not in double_single_quote[1]:
-            self.results.append(
-                {
-                    "type": "FINDING",
-                    "description": f"Possible SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Single Quote/Two Single Quote]",
-                }
-            )
+            # Add Two Single Quotes
+            if self.event.data["type"] == "COOKIE":
+                cookies_probe = {self.event.data["name"]: f"{probe_value}''"}
+                double_single_quote_url = self.event.data["url"]
+                double_single_quote = await http_compare.compare(
+                    double_single_quote_url, cookies={**cookies, **cookies_probe}
+                )
+            elif self.event.data["type"] == "GETPARAM":
+                double_single_quote_url = f"{self.event.data['url']}?{self.event.data['name']}={probe_value}''"
+                double_single_quote = await http_compare.compare(double_single_quote_url, cookies=cookies)
+            elif self.event.data["type"] == "HEADER":
+                headers = {self.event.data["name"]: f"{probe_value}''"}
+                double_single_quote_url = self.event.data["url"]
+                double_single_quote = await http_compare.compare(double_single_quote_url, headers=headers, cookies=cookies)
+            elif self.event.data["type"] == "POSTPARAM":
+                data = {self.event.data["name"]: f"{probe_value}''"}
+                if self.event.data["additional_params"] is not None:
+                    data.update(self.event.data["additional_params"])
+                double_single_quote_url = self.event.data["url"]
+                double_single_quote = await http_compare.compare(
+                    double_single_quote_url, method="POST", data=data, cookies=cookies
+                )
+
+            if "code" in single_quote[1] and "code" not in double_single_quote[1]:
+                self.results.append(
+                    {
+                        "type": "FINDING",
+                        "description": f"Possible SQL Injection. Parameter: [{self.event.data['name']}] Parameter Type: [{self.event.data['type']}] Detection Method: [Single Quote/Two Single Quote]",
+                    }
+                )
+        except HttpCompareError as e:
+            self.lightfuzz.debug(e)
+     
 
         delay_probe_strings = [
             f"'||pg_sleep({str(self.expected_delay)})--",  # postgres
