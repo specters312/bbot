@@ -6,7 +6,7 @@ import re
 import urllib.parse
 
 from bbot.core.helpers.misc import extract_params_html
-from bbot.core.errors import InteractshError
+from bbot.core.errors import InteractshError, HttpCompareError
 
 
 class BaseLightfuzz:
@@ -79,33 +79,39 @@ class CmdILightFuzz(BaseLightfuzz):
 
         positive_detections = []
         for p in cmdi_probe_strings:
-            probe = f"{p} echo {canary} {p}"
-            if self.event.data["type"] == "COOKIE":
-                cookies_probe = {self.event.data["name"]: f"{probe_value}{probe}"}
-                probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(probe_url, cookies={**cookies, **cookies_probe}, timeout=30)
-            elif self.event.data["type"] == "GETPARAM":
-                encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
-                probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
-                cmdi_probe = await http_compare.compare(probe_url, timeout=30)
-            elif self.event.data["type"] == "HEADER":
-                headers = {self.event.data["name"]: f"{probe_value}{probe}"}
-                probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(probe_url, headers=headers, timeout=30)
-            elif self.event.data["type"] == "POSTPARAM":
-                data = {self.event.data["name"]: f"{probe_value}{probe}"}
-                if self.event.data["additional_params"] is not None:
-                    data.update(self.event.data["additional_params"])
-                probe_url = self.event.data["url"]
-                cmdi_probe = await http_compare.compare(probe_url, timeout=30, method="POST", data=data)
-            else:
-                self.lightfuzz.debug(f'Got unexpected value for self.event.data["type"]: [{self.event.data["type"]}]')
-                break
+            try:
+                probe = f"{p} echo {canary} {p}"
+                if self.event.data["type"] == "COOKIE":
+                    cookies_probe = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    probe_url = self.event.data["url"]
+                    cmdi_probe = await http_compare.compare(probe_url, cookies={**cookies, **cookies_probe}, timeout=30)
+                elif self.event.data["type"] == "GETPARAM":
+                    encoded_probe_value = urllib.parse.quote(f"{probe_value}{probe}".encode())
+                    probe_url = f"{self.event.data['url']}?{self.event.data['name']}={encoded_probe_value}"
+                    cmdi_probe = await http_compare.compare(probe_url, timeout=30)
+                elif self.event.data["type"] == "HEADER":
+                    headers = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    probe_url = self.event.data["url"]
+                    cmdi_probe = await http_compare.compare(probe_url, headers=headers, timeout=30)
+                elif self.event.data["type"] == "POSTPARAM":
+                    data = {self.event.data["name"]: f"{probe_value}{probe}"}
+                    if self.event.data["additional_params"] is not None:
+                        data.update(self.event.data["additional_params"])
+                    probe_url = self.event.data["url"]
+                    cmdi_probe = await http_compare.compare(probe_url, timeout=30, method="POST", data=data)
+                else:
+                    self.lightfuzz.debug(f'Got unexpected value for self.event.data["type"]: [{self.event.data["type"]}]')
+                    break
 
-            if cmdi_probe[3]:
-                if canary in cmdi_probe[3].text and "echo" not in cmdi_probe[3].text:
-                    self.lightfuzz.debug(f"canary [{canary}] found in response when sending probe [{p}]")
-                    positive_detections.append(p)
+                if cmdi_probe[3]:
+                    if canary in cmdi_probe[3].text and "echo" not in cmdi_probe[3].text:
+                        self.lightfuzz.debug(f"canary [{canary}] found in response when sending probe [{p}]")
+                        positive_detections.append(p)
+            except HttpCompareError as e:
+                self.lightfuzz.debug(e)
+                continue
+
+
         if len(positive_detections) > 0:
             self.results.append(
                 {
