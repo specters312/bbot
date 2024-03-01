@@ -97,6 +97,7 @@ class URLExtractor(BaseExtractor):
         for result, name in results:
             url_event = await self.report(result, name, event, **kwargs)
             if url_event is not None:
+
                 url_in_scope = self.excavate.scan.in_scope(url_event)
                 is_spider_danger = self.excavate.helpers.is_spider_danger(event, result)
                 exceeds_max_links = urls_found >= self.web_spider_links_per_page and url_in_scope
@@ -385,7 +386,12 @@ class excavate(BaseInternalModule):
                     else:
                         self.verbose(f"Exceeded max HTTP redirects ({self.max_redirects}): {location}")
 
-            body = self.helpers.recursive_decode(event.data.get("body", ""))
+            # revisit this before merging to dev!
+            if self.scan.config.get("url_remove_querystring", True) == False:
+                body = event.data.get("body", "")
+            else:
+                body = self.helpers.recursive_decode(event.data.get("body", ""))
+
             # Cloud extractors
             self.helpers.cloud.excavate(event, body)
             await self.search(
