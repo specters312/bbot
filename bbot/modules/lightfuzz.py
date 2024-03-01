@@ -690,7 +690,7 @@ class lightfuzz(BaseModule):
                     continue
 
                 for bl_param in self.parameter_blacklist:
-                    if parameter_name.lower() == bl_param:
+                    if parameter_name.lower() == bl_param.lower():
                         in_bl = True
                         continue
 
