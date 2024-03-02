@@ -669,20 +669,19 @@ class lightfuzz(BaseModule):
 
                     if "=" not in v:
                         self.critical(f"DEBUG FOR COOKIE WITHOUT =: {v}")
+                        continue
                     else:
+
+                        cookie_name = v.split("=")[0]
+                        cookie_value = v.split("=")[1].split(";")[0]
 
                         in_bl = False
                         for bl_param in self.parameter_blacklist:
-                            if bl_param.lower() == k.lower():
+                            if bl_param.lower() == k.cookie_name():
                                 in_bl = True
-                                continue
 
                         if in_bl == False:
-                            cookie_name = v.split("=")[0]
-                            cookie_value = v.split("=")[1].split(";")[0]
-
                             assigned_cookies[cookie_name] = cookie_value
-
                             description = f"Set-Cookie Assigned Cookie [{cookie_name}]"
                             data = {
                                 "host": str(event.host),
