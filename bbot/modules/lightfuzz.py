@@ -677,7 +677,7 @@ class lightfuzz(BaseModule):
 
                         in_bl = False
                         for bl_param in self.parameter_blacklist:
-                            if bl_param.lower() == k.cookie_name():
+                            if bl_param.lower() == cookie_name.lower():
                                 in_bl = True
 
                         if in_bl == False:
@@ -692,6 +692,8 @@ class lightfuzz(BaseModule):
                                 "description": description,
                             }
                             await self.emit_event(data, "WEB_PARAMETER", event)
+                        else:
+                            self.debug(f"blocked cookie parameter [{cookie_name}] due to BL match")
 
             body = event.data.get("body", "")
 
@@ -739,6 +741,8 @@ class lightfuzz(BaseModule):
                         "regex_name": regex_name,
                     }
                     await self.emit_event(data, "WEB_PARAMETER", event)
+                else:
+                    self.debug(f"blocked parameter [{parameter_name}] due to BL match")
 
         elif event.type == "WEB_PARAMETER":
 
