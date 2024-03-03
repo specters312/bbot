@@ -1,3 +1,5 @@
+import re
+
 from bbot.modules.base import BaseModule
 from bbot.core.errors import HttpCompareError
 from bbot.core.helpers.misc import extract_params_json, extract_params_xml, extract_params_html
@@ -74,6 +76,8 @@ class paramminer_headers(BaseModule):
     compare_mode = "header"
     default_wordlist = "paramminer_headers.txt"
 
+    header_regex = re.compile(r"^[!#$%&\'*+\-.^_`|~0-9a-zA-Z]+: [^\r\n]+$")
+
     async def setup(self):
         self.event_dict = {}
         self.already_checked = set()
@@ -99,7 +103,6 @@ class paramminer_headers(BaseModule):
 
     async def do_mining(self, wl, url, batch_size, compare_helper):
         for i in wl:
-            self.hugeinfo(i)
             if i not in self.wl:
 
                 h = hash(i[1] + url)
@@ -124,6 +127,11 @@ class paramminer_headers(BaseModule):
     async def process_results(self, event, results):
         url = event.data.get("url")
         for result, reasons, reflection in results:
+            paramtype = self.compare_mode.upper()
+            if paramtype == "HEADER":
+                if self.header_regex.match(result):
+                    self.debug("rejecting parameter as it is not a valid header")
+                    continue
             tags = []
             if reflection:
                 tags = ["http_reflection"]
@@ -132,7 +140,7 @@ class paramminer_headers(BaseModule):
                 {
                     "host": str(event.host),
                     "url": url,
-                    "type": self.compare_mode.upper(),
+                    "type": paramtype,
                     "description": description,
                     "name": result,
                 },
@@ -150,7 +158,6 @@ class paramminer_headers(BaseModule):
             self.debug(f"Error initializing compare helper: {e}")
             return
         batch_size = await self.count_test(url)
-        self.critical(batch_size)
         if batch_size == None or batch_size <= 0:
             self.debug(f"Failed to get baseline max {self.compare_mode} count, aborting")
             return
@@ -212,11 +219,7 @@ class paramminer_headers(BaseModule):
         elif content_type and "xml" in content_type.lower():
             return extract_params_xml(body)
         else:
-            self.critical(extract_params_html(body))
-
-            params_html = {e[1] for e in set(extract_params_html(body))}
-
-            self.hugewarning(params_html)
+            params_html = {e[2] for e in set(extract_params_html(body))}
             return params_html
 
     async def binary_search(self, compare_helper, url, group, reasons=None, reflection=False):
@@ -254,8 +257,7 @@ class paramminer_headers(BaseModule):
                 return
             untested_matches_copy = untested_matches.copy()
             for i in untested_matches:
-                self.hugewarning(i)
-                h = hash(i[1] + url)
+                h = hash(i + url)
                 if h in self.already_checked:
                     untested_matches_copy.remove(i)
             try:

@@ -117,6 +117,7 @@ class HttpCompare:
                     "ETag",
                     "X-Pad",
                     "X-Backside-Transport",
+                    "keep-alive",
                 ]
             ]
             dynamic_headers = self.compare_headers(baseline_1.headers, baseline_2.headers)
@@ -276,5 +277,6 @@ class HttpCompare:
 
             # a nonsense header "caused" a difference, we need to abort
             if match == False:
+                log.debug("Aborting due to difference detected with nonsense parameter")
                 return False
         return True
