@@ -219,7 +219,7 @@ class paramminer_headers(BaseModule):
         elif content_type and "xml" in content_type.lower():
             return extract_params_xml(body)
         else:
-            params_html = {e[2] for e in set(extract_params_html(body))}
+            params_html = {e[2] for e in list(extract_params_html(body))}
             return params_html
 
     async def binary_search(self, compare_helper, url, group, reasons=None, reflection=False):
