@@ -9,7 +9,7 @@ class paramminer_headers(BaseModule):
     """
 
     watched_events = ["HTTP_RESPONSE"]
-    produced_events = ["FINDING"]
+    produced_events = ["WEB_PARAMETER"]
     flags = ["active", "aggressive", "slow", "web-paramminer"]
     meta = {"description": "Use smart brute-force to check for common HTTP header parameters"}
     options = {
@@ -126,10 +126,15 @@ class paramminer_headers(BaseModule):
             if reflection:
                 tags = ["http_reflection"]
             description = f"[Paramminer] {self.compare_mode.capitalize()}: [{result}] Reasons: [{reasons}] Reflection: [{str(reflection)}]"
-
             await self.emit_event(
-                {"host": str(event.host), "url": url, "description": description},
-                "FINDING",
+                {
+                    "host": str(event.host),
+                    "url": url,
+                    "type": self.compare_mode.upper(),
+                    "description": description,
+                    "name": result,
+                },
+                "WEB_PARAMETER",
                 event,
                 tags=tags,
             )
@@ -143,6 +148,7 @@ class paramminer_headers(BaseModule):
             self.debug(f"Error initializing compare helper: {e}")
             return
         batch_size = await self.count_test(url)
+        self.critical(batch_size)
         if batch_size == None or batch_size <= 0:
             self.debug(f"Failed to get baseline max {self.compare_mode} count, aborting")
             return
