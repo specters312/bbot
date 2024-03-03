@@ -99,7 +99,9 @@ class paramminer_headers(BaseModule):
 
     async def do_mining(self, wl, url, batch_size, compare_helper):
         for i in wl:
+            self.hugeinfo(i)
             if i not in self.wl:
+
                 h = hash(i[1] + url)
                 self.already_checked.add(h)
 
@@ -210,7 +212,11 @@ class paramminer_headers(BaseModule):
         elif content_type and "xml" in content_type.lower():
             return extract_params_xml(body)
         else:
+            self.critical(extract_params_html(body))
+
             params_html = {e[1] for e in set(extract_params_html(body))}
+
+            self.hugewarning(params_html)
             return params_html
 
     async def binary_search(self, compare_helper, url, group, reasons=None, reflection=False):
@@ -248,6 +254,7 @@ class paramminer_headers(BaseModule):
                 return
             untested_matches_copy = untested_matches.copy()
             for i in untested_matches:
+                self.hugewarning(i)
                 h = hash(i[1] + url)
                 if h in self.already_checked:
                     untested_matches_copy.remove(i)
