@@ -104,8 +104,8 @@ class paramminer_headers(BaseModule):
     async def do_mining(self, wl, url, batch_size, compare_helper):
         for i in wl:
             if i not in self.wl:
-
-                h = hash(i[1] + url)
+                # this might have been a bug so check it before merging to dev.
+                h = hash(i + url)
                 self.already_checked.add(h)
 
         results = set()
