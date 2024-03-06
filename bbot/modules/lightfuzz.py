@@ -1,5 +1,3 @@
-# adapted from https://github.com/bugcrowd/HUNT
-
 from bbot.modules.base import BaseModule
 import statistics
 import re
@@ -214,17 +212,17 @@ class SQLiLightfuzz(BaseLightfuzz):
                 baseline_url, cookies=cookies, include_cache_buster=False
             )
         elif self.event.data["type"] == "COOKIE":
-            cookies_probe = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            cookies_probe = {self.event.data["name"]: f"{probe_value}"}
             http_compare = self.lightfuzz.helpers.http_compare(
                 baseline_url, include_cache_buster=False, cookies={**cookies, **cookies_probe}
             )
         elif self.event.data["type"] == "HEADER":
-            headers = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            headers = {self.event.data["name"]: f"{probe_value}"}
             http_compare = self.lightfuzz.helpers.http_compare(
                 baseline_url, include_cache_buster=False, headers=headers, cookies=cookies
             )
         elif self.event.data["type"] == "POSTPARAM":
-            data = {self.event.data["name"]: f"{self.event.data['original_value']}"}
+            data = {self.event.data["name"]: f"{probe_value}"}
             if self.event.data["additional_params"] is not None:
                 data.update(self.event.data["additional_params"])
             http_compare = self.lightfuzz.helpers.http_compare(
@@ -573,6 +571,7 @@ class lightfuzz(BaseModule):
         "__SCROLLPOSITIONX",
         "ASP.NET_SessionId",
         "JSESSIONID",
+        "PHPSESSID",
     ]
     in_scope_only = True
 
